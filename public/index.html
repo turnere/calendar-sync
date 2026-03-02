@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calendar Sync</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #f5f7fa;
+      color: #333;
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+      margin-bottom: 30px;
+      border-radius: 0 0 20px 20px;
+    }
+    
+    header h1 {
+      font-size: 2rem;
+      margin-bottom: 5px;
+    }
+    
+    header p {
+      opacity: 0.9;
+    }
+    
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      padding: 25px;
+      margin-bottom: 20px;
+    }
+    
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 20px;
+      color: #667eea;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .card h2 .step {
+      background: #667eea;
+      color: white;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+    }
+    
+    .accounts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    
+    @media (max-width: 600px) {
+      .accounts-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .account-card {
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      transition: border-color 0.3s;
+    }
+    
+    .account-card.connected {
+      border-color: #4caf50;
+      background: #f8fff8;
+    }
+    
+    .account-card h3 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+      color: #555;
+    }
+    
+    .account-card .email {
+      font-size: 0.9rem;
+      color: #667eea;
+      margin-bottom: 15px;
+      word-break: break-all;
+    }
+    
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.3s;
+    }
+    
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #5a6fd6;
+    }
+    
+    .btn-success {
+      background: #4caf50;
+      color: white;
+    }
+    
+    .btn-success:hover {
+      background: #45a049;
+    }
+    
+    .btn-danger {
+      background: #f44336;
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      background: #da190b;
+    }
+    
+    .btn-outline {
+      background: transparent;
+      border: 2px solid #667eea;
+      color: #667eea;
+    }
+    
+    .btn-outline:hover {
+      background: #667eea;
+      color: white;
+    }
+    
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #555;
+    }
+    
+    .form-group select,
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 1rem;
+      transition: border-color 0.3s;
+    }
+    
+    .form-group select:focus,
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    
+    .prefix-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    
+    .status-enabled {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    
+    .status-disabled {
+      background: #ffebee;
+      color: #c62828;
+    }
+    
+    .sync-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+    
+    .sync-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .logs-container {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+    
+    .log-entry {
+      padding: 10px 15px;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 0.9rem;
+    }
+    
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    
+    .log-entry .time {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    
+    .log-entry .action {
+      font-weight: 500;
+      margin: 0 8px;
+    }
+    
+    .log-entry.success .action { color: #4caf50; }
+    .log-entry.error .action { color: #f44336; }
+    .log-entry.info .action { color: #2196f3; }
+    
+    .hidden {
+      display: none !important;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+    
+    .spinner {
+      display: inline-block;
+      width: 30px;
+      height: 30px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 10px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .alert {
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .alert-info {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    
+    .alert-warning {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    
+    .alert-success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 30px;
+      color: #999;
+    }
+    
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #e0e0e0;
+      margin-bottom: 20px;
+    }
+    
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.3s;
+    }
+    
+    .tab:hover {
+      color: #667eea;
+    }
+    
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      font-weight: 500;
+    }
+    
+    .duplicates-container {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    
+    .duplicate-item {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      background: #fafafa;
+    }
+    
+    .duplicate-item:hover {
+      border-color: #667eea;
+    }
+    
+    .duplicate-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .duplicate-header input[type="checkbox"] {
+      margin-top: 4px;
+      width: 18px;
+      height: 18px;
+    }
+    
+    .duplicate-events {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 15px;
+      align-items: start;
+    }
+    
+    .duplicate-event {
+      background: white;
+      border-radius: 6px;
+      padding: 12px;
+      border: 1px solid #e0e0e0;
+    }
+    
+    .duplicate-event h4 {
+      margin: 0 0 8px 0;
+      font-size: 0.95rem;
+      color: #333;
+    }
+    
+    .duplicate-event .meta {
+      font-size: 0.85rem;
+      color: #666;
+    }
+    
+    .duplicate-arrow {
+      display: flex;
+      align-items: center;
+      font-size: 1.5rem;
+      color: #999;
+      padding-top: 20px;
+    }
+    
+    .duplicate-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    
+    .duplicate-actions .btn {
+      padding: 6px 12px;
+      font-size: 0.85rem;
+    }
+    
+    .source-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #667eea;
+      margin-bottom: 4px;
+    }
+    
+    .existing-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #e65100;
+      margin-bottom: 4px;
+    }
+    
+    @media (max-width: 700px) {
+      .duplicate-events {
+        grid-template-columns: 1fr;
+      }
+      .duplicate-arrow {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📅 Calendar Sync</h1>
+    <p>Two-way sync between your Google Calendars</p>
+  </header>
+  
+  <div class="container">
+    <!-- Step 1: Connect Accounts -->
+    <div class="card">
+      <h2><span class="step">1</span> Connect Google Accounts</h2>
+      <div class="accounts-grid">
+        <div id="account1" class="account-card">
+          <h3>Account 1 (Business)</h3>
+          <div id="account1-status">
+            <div class="loading">
+              <div class="spinner"></div>
+              <div>Loading...</div>
+            </div>
+          </div>
+        </div>
+        <div id="account2" class="account-card">
+          <h3>Account 2 (Personal)</h3>
+          <div id="account2-status">
+            <div class="loading">
+              <div class="spinner"></div>
+              <div>Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Step 2: Configure Calendars -->
+    <div id="config-section" class="card hidden">
+      <h2><span class="step">2</span> Configure Sync</h2>
+      
+      <div class="form-group">
+        <label for="calendar1">Calendar from Account 1:</label>
+        <select id="calendar1">
+          <option value="">Loading calendars...</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="calendar2">Calendar from Account 2:</label>
+        <select id="calendar2">
+          <option value="">Loading calendars...</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label>Event Title Prefixes (to identify source):</label>
+        <div class="prefix-group">
+          <div>
+            <input type="text" id="prefix1" placeholder="[Business] " value="[Business] ">
+            <small style="color: #999;">Prefix for events from Account 1</small>
+          </div>
+          <div>
+            <input type="text" id="prefix2" placeholder="[Personal] " value="[Personal] ">
+            <small style="color: #999;">Prefix for events from Account 2</small>
+          </div>
+        </div>
+      </div>
+      
+      <button id="save-config" class="btn btn-primary">Save Configuration</button>
+    </div>
+    
+    <!-- Step 3: Sync Status & Controls -->
+    <div id="sync-section" class="card hidden">
+      <h2><span class="step">3</span> Sync Status</h2>
+      
+      <div class="sync-status">
+        <div>
+          <span>Status: </span>
+          <span id="sync-enabled-badge" class="status-badge status-disabled">Disabled</span>
+          <div id="last-sync" style="font-size: 0.85rem; color: #999; margin-top: 5px;"></div>
+        </div>
+        <div class="sync-actions">
+          <button id="toggle-sync" class="btn btn-outline">Enable Sync</button>
+          <button id="sync-now" class="btn btn-success">Sync Now</button>
+        </div>
+      </div>
+      
+      <div id="sync-result" class="alert alert-info hidden" style="margin-top: 20px;"></div>
+    </div>
+    
+    <!-- Duplicate Scanner -->
+    <div id="duplicates-section" class="card hidden">
+      <h2>
+        <span class="step">🔍</span> 
+        Duplicate Scanner
+      </h2>
+      
+      <div class="alert alert-info" style="margin-bottom: 20px;">
+        Scan for duplicate events <strong>within each calendar</strong> (e.g., multiple "[PHOTO] Wedding" on the same date). 
+        This helps clean up leftovers from previous sync tools.
+      </div>
+      
+      <button id="scan-duplicates" class="btn btn-primary" style="margin-bottom: 20px;">Scan for Duplicates</button>
+      
+      <div id="duplicates-results" class="hidden">
+        <div id="delete-summary" class="alert" style="display: none; margin-bottom: 20px;">
+          <span id="selected-count">0</span> event(s) selected for deletion
+          <button id="delete-all-btn" class="btn btn-danger" style="margin-left: 15px;" onclick="deleteAllSelected()">Delete All Selected</button>
+        </div>
+        
+        <div id="duplicates-cal1">
+          <h3 id="cal1-name" style="margin-bottom: 10px;">Calendar 1</h3>
+          <div id="duplicates-list-1" class="duplicates-container">
+            <div class="empty-state">No duplicates found</div>
+          </div>
+        </div>
+        
+        <div id="duplicates-cal2" style="margin-top: 20px;">
+          <h3 id="cal2-name" style="margin-bottom: 10px;">Calendar 2</h3>
+          <div id="duplicates-list-2" class="duplicates-container">
+            <div class="empty-state">No duplicates found</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Sync Logs -->
+    <div id="logs-section" class="card hidden">
+      <h2>Sync Logs</h2>
+      
+      <div class="tabs">
+        <div class="tab active" data-tab="logs">Recent Activity</div>
+        <div class="tab" data-tab="events">Synced Events</div>
+      </div>
+      
+      <div id="logs-content">
+        <div id="logs-tab" class="tab-content">
+          <div class="logs-container">
+            <div class="empty-state">No sync activity yet</div>
+          </div>
+        </div>
+        <div id="events-tab" class="tab-content hidden">
+          <div class="logs-container">
+            <div class="empty-state">No synced events yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // State
+    let state = {
+      account1Connected: false,
+      account2Connected: false,
+      account1Email: null,
+      account2Email: null,
+      calendars1: [],
+      calendars2: [],
+      syncConfig: null
+    };
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', async () => {
+      await loadStatus();
+      setupEventListeners();
+    });
+    
+    // Load current status
+    async function loadStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+        
+        state.account1Connected = data.account1Connected;
+        state.account2Connected = data.account2Connected;
+        state.account1Email = data.account1Email;
+        state.account2Email = data.account2Email;
+        state.syncConfig = data.syncConfig;
+        
+        updateAccountUI(1);
+        updateAccountUI(2);
+        
+        if (state.account1Connected && state.account2Connected) {
+          await loadCalendars();
+          document.getElementById('config-section').classList.remove('hidden');
+          document.getElementById('sync-section').classList.remove('hidden');
+          document.getElementById('duplicates-section').classList.remove('hidden');
+          document.getElementById('logs-section').classList.remove('hidden');
+          
+          await loadSyncConfig();
+          await loadLogs();
+        }
+      } catch (error) {
+        console.error('Error loading status:', error);
+      }
+    }
+    
+    // Update account card UI
+    function updateAccountUI(accountNum) {
+      const card = document.getElementById(`account${accountNum}`);
+      const statusDiv = document.getElementById(`account${accountNum}-status`);
+      const connected = accountNum === 1 ? state.account1Connected : state.account2Connected;
+      const email = accountNum === 1 ? state.account1Email : state.account2Email;
+      
+      if (connected) {
+        card.classList.add('connected');
+        statusDiv.innerHTML = `
+          <div class="email">${email || 'Connected'}</div>
+          <span class="status-badge status-enabled">Connected</span>
+        `;
+      } else {
+        card.classList.remove('connected');
+        statusDiv.innerHTML = `
+          <p style="color: #999; margin-bottom: 15px;">Not connected</p>
+          <a href="/auth/login/${accountNum}" class="btn btn-primary">Connect Account</a>
+        `;
+      }
+    }
+    
+    // Load calendars for both accounts
+    async function loadCalendars() {
+      try {
+        const [res1, res2] = await Promise.all([
+          fetch('/api/calendars/list/1'),
+          fetch('/api/calendars/list/2')
+        ]);
+        
+        const data1 = await res1.json();
+        const data2 = await res2.json();
+        
+        // Check for errors
+        if (Array.isArray(data1)) {
+          state.calendars1 = data1;
+          populateCalendarSelect('calendar1', state.calendars1);
+        } else {
+          console.error('Error loading calendars for account 1:', data1);
+          const select = document.getElementById('calendar1');
+          select.innerHTML = `<option value="">Error: ${data1.details || data1.error}</option>`;
+        }
+        
+        if (Array.isArray(data2)) {
+          state.calendars2 = data2;
+          populateCalendarSelect('calendar2', state.calendars2);
+        } else {
+          console.error('Error loading calendars for account 2:', data2);
+          const select = document.getElementById('calendar2');
+          select.innerHTML = `<option value="">Error: ${data2.details || data2.error}</option>`;
+        }
+      } catch (error) {
+        console.error('Error loading calendars:', error);
+      }
+    }
+    
+    // Populate calendar dropdown
+    function populateCalendarSelect(selectId, calendars) {
+      const select = document.getElementById(selectId);
+      select.innerHTML = '<option value="">Select a calendar...</option>';
+      
+      calendars.forEach(cal => {
+        const option = document.createElement('option');
+        option.value = cal.id;
+        option.textContent = cal.summary + (cal.primary ? ' (Primary)' : '');
+        select.appendChild(option);
+      });
+    }
+    
+    // Load sync configuration
+    async function loadSyncConfig() {
+      try {
+        const response = await fetch('/api/sync/config');
+        const config = await response.json();
+        
+        if (config.calendar_id_1) {
+          document.getElementById('calendar1').value = config.calendar_id_1;
+        }
+        if (config.calendar_id_2) {
+          document.getElementById('calendar2').value = config.calendar_id_2;
+        }
+        if (config.prefix_1) {
+          document.getElementById('prefix1').value = config.prefix_1;
+        }
+        if (config.prefix_2) {
+          document.getElementById('prefix2').value = config.prefix_2;
+        }
+        
+        updateSyncStatus(config.enabled, config.last_sync);
+      } catch (error) {
+        console.error('Error loading sync config:', error);
+      }
+    }
+    
+    // Update sync status UI
+    function updateSyncStatus(enabled, lastSync) {
+      const badge = document.getElementById('sync-enabled-badge');
+      const toggleBtn = document.getElementById('toggle-sync');
+      const lastSyncDiv = document.getElementById('last-sync');
+      
+      if (enabled) {
+        badge.textContent = 'Enabled';
+        badge.className = 'status-badge status-enabled';
+        toggleBtn.textContent = 'Disable Sync';
+        toggleBtn.className = 'btn btn-danger';
+      } else {
+        badge.textContent = 'Disabled';
+        badge.className = 'status-badge status-disabled';
+        toggleBtn.textContent = 'Enable Sync';
+        toggleBtn.className = 'btn btn-outline';
+      }
+      
+      if (lastSync) {
+        const date = new Date(lastSync);
+        lastSyncDiv.textContent = `Last sync: ${date.toLocaleString()}`;
+      }
+    }
+    
+    // Load sync logs
+    async function loadLogs() {
+      try {
+        const [logsRes, eventsRes] = await Promise.all([
+          fetch('/api/sync/logs'),
+          fetch('/api/sync/events')
+        ]);
+        
+        const logs = await logsRes.json();
+        const events = await eventsRes.json();
+        
+        renderLogs(logs);
+        renderSyncedEvents(events);
+      } catch (error) {
+        console.error('Error loading logs:', error);
+      }
+    }
+    
+    // Render logs
+    function renderLogs(logs) {
+      const container = document.querySelector('#logs-tab .logs-container');
+      
+      if (!logs.length) {
+        container.innerHTML = '<div class="empty-state">No sync activity yet</div>';
+        return;
+      }
+      
+      container.innerHTML = logs.map(log => `
+        <div class="log-entry ${log.status}">
+          <span class="time">${new Date(log.created_at).toLocaleString()}</span>
+          <span class="action">${formatAction(log.action)}</span>
+          ${log.event_title ? `<span>"${log.event_title}"</span>` : ''}
+          ${log.message ? `<br><small style="color: #666;">${log.message}</small>` : ''}
+        </div>
+      `).join('');
+    }
+    
+    // Format action name
+    function formatAction(action) {
+      const actions = {
+        'create': 'Created',
+        'update': 'Updated',
+        'delete': 'Deleted',
+        'auto_linked': 'Auto-Linked',
+        'delete_duplicate': 'Deleted Duplicate',
+        'sync_complete': 'Sync Complete',
+        'sync_error': 'Sync Error'
+      };
+      return actions[action] || action;
+    }
+    
+    // Render synced events
+    function renderSyncedEvents(events) {
+      const container = document.querySelector('#events-tab .logs-container');
+      
+      if (!events.length) {
+        container.innerHTML = '<div class="empty-state">No synced events yet</div>';
+        return;
+      }
+      
+      container.innerHTML = events.slice(0, 50).map(event => `
+        <div class="log-entry">
+          <span class="time">${new Date(event.created_at).toLocaleString()}</span>
+          <span>Account ${event.source_account} → Account ${event.source_account === 1 ? 2 : 1}</span>
+          <br><small style="color: #666;">Source: ${event.source_event_id.substring(0, 20)}...</small>
+        </div>
+      `).join('');
+    }
+    
+    // Scan for duplicates within each calendar
+    async function scanDuplicates() {
+      const btn = document.getElementById('scan-duplicates');
+      btn.disabled = true;
+      btn.textContent = 'Scanning...';
+      
+      try {
+        const response = await fetch('/api/sync/scan-duplicates');
+        const data = await response.json();
+        
+        if (data.error) {
+          showResult(`Error: ${data.error}`, 'warning');
+          return;
+        }
+        
+        document.getElementById('duplicates-results').classList.remove('hidden');
+        document.getElementById('cal1-name').textContent = data.calendar1.name || 'Calendar 1';
+        document.getElementById('cal2-name').textContent = data.calendar2.name || 'Calendar 2';
+        
+        renderCalendarDuplicates('duplicates-list-1', data.calendar1.duplicates, 1);
+        renderCalendarDuplicates('duplicates-list-2', data.calendar2.duplicates, 2);
+        
+        const totalDups = data.calendar1.duplicates.length + data.calendar2.duplicates.length;
+        if (totalDups === 0) {
+          showResult('No duplicates found in either calendar!', 'success');
+        } else {
+          showResult(`Found ${totalDups} duplicate group(s) - review and delete extras`, 'info');
+        }
+      } catch (error) {
+        console.error('Error scanning duplicates:', error);
+        showResult('Error scanning for duplicates', 'warning');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Scan for Duplicates';
+      }
+    }
+    
+    // Render duplicates for a single calendar
+    function renderCalendarDuplicates(containerId, duplicates, accountNum) {
+      const container = document.getElementById(containerId);
+      
+      if (!duplicates.length) {
+        container.innerHTML = '<div class="empty-state">No duplicates found</div>';
+        return;
+      }
+      
+      container.innerHTML = duplicates.map(dup => {
+        const timeStr = formatEventTime({ start: { dateTime: dup.time, date: dup.time?.includes('T') ? null : dup.time } });
+        let typeLabel;
+        if (dup.type === 'corrupted') {
+          typeLabel = '<span style="background: #9c27b0; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">CORRUPTED - DELETE ALL</span>';
+        } else if (dup.type === 'exact') {
+          typeLabel = '<span style="background: #f44336; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">EXACT</span>';
+        } else {
+          typeLabel = '<span style="background: #ff9800; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">SIMILAR</span>';
+        }
+        
+        const isCorrupted = dup.type === 'corrupted';
+        
+        return `
+          <div class="duplicate-item">
+            <div class="duplicate-header">
+              <div style="flex: 1;">
+                <strong>${escapeHtml(dup.title)}</strong>${typeLabel}
+                <div style="font-size: 0.85rem; color: #666;">
+                  ${timeStr} • ${dup.count} copies found
+                </div>
+              </div>
+            </div>
+            
+            <div style="margin-top: 12px;">
+              ${dup.events.map((event, idx) => {
+                const isKeep = !isCorrupted && idx === 0;
+                return `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: ${isKeep ? '#e8f5e9' : (isCorrupted ? '#ffebee' : '#fff')}; border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 4px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    ${isKeep ? `
+                      <span style="width: 18px; text-align: center; color: #2e7d32;">✓</span>
+                    ` : `
+                      <input type="checkbox" class="delete-checkbox" data-account="${accountNum}" data-event-id="${event.id}" checked onchange="updateDeleteCount()">
+                    `}
+                    <div>
+                      <span style="font-size: 0.85rem; ${isKeep ? 'color: #2e7d32; font-weight: 500;' : (isCorrupted ? 'color: #c62828;' : '')}">${escapeHtml(event.summary)}</span>
+                      ${isKeep ? '<span style="font-size: 0.75rem; color: #999; margin-left: 8px;">(Keep)</span>' : ''}
+                    </div>
+                  </div>
+                  ${!isKeep ? `
+                    <button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.8rem;" onclick="deleteDuplicateEvent(${accountNum}, '${event.id}')">
+                      Delete
+                    </button>
+                  ` : ''}
+                </div>
+              `}).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      // Update delete count after rendering
+      setTimeout(updateDeleteCount, 0);
+    }
+    
+    // Delete a duplicate event
+    async function deleteDuplicateEvent(accountNum, eventId) {
+      if (!confirm('Delete this event? This cannot be undone.')) return;
+      
+      try {
+        const response = await fetch(`/api/sync/event/${accountNum}/${eventId}`, {
+          method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showResult('Event deleted', 'success');
+          await scanDuplicates(); // Re-scan to update the list
+        } else {
+          showResult(`Error: ${result.error}`, 'warning');
+        }
+      } catch (error) {
+        console.error('Error deleting event:', error);
+        showResult('Error deleting event', 'warning');
+      }
+    }
+    
+    // Update the delete count display
+    function updateDeleteCount() {
+      const checkboxes = document.querySelectorAll('.delete-checkbox:checked');
+      const count = checkboxes.length;
+      const summary = document.getElementById('delete-summary');
+      const countSpan = document.getElementById('selected-count');
+      
+      if (count > 0) {
+        summary.style.display = 'block';
+        summary.className = 'alert alert-warning';
+        countSpan.textContent = count;
+      } else {
+        summary.style.display = 'none';
+      }
+    }
+    
+    // Delete all selected duplicates
+    async function deleteAllSelected() {
+      const checkboxes = document.querySelectorAll('.delete-checkbox:checked');
+      const events = Array.from(checkboxes).map(cb => ({
+        accountNum: parseInt(cb.dataset.account),
+        eventId: cb.dataset.eventId
+      }));
+      
+      if (events.length === 0) {
+        showResult('No events selected', 'info');
+        return;
+      }
+      
+      if (!confirm(`Delete ${events.length} event(s)? This cannot be undone.`)) return;
+      
+      const btn = document.getElementById('delete-all-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+      
+      try {
+        const response = await fetch('/api/sync/delete-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ events })
+        });
+        
+        const result = await response.json();
+        
+        if (result.deleted > 0) {
+          showResult(`Deleted ${result.deleted} event(s)${result.failed > 0 ? `, ${result.failed} failed` : ''}`, result.failed > 0 ? 'warning' : 'success');
+        } else if (result.failed > 0) {
+          showResult(`Failed to delete ${result.failed} event(s)`, 'warning');
+        }
+        
+        await scanDuplicates(); // Re-scan to update the list
+      } catch (error) {
+        console.error('Error batch deleting:', error);
+        showResult('Error deleting events', 'warning');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Delete All Selected';
+      }
+    }
+    
+    // Format event time for display
+    function formatEventTime(event) {
+      if (!event.start) return 'No time';
+      
+      if (event.start.date) {
+        // All-day event
+        return `All day: ${new Date(event.start.date).toLocaleDateString()}`;
+      }
+      
+      if (event.start.dateTime) {
+        const start = new Date(event.start.dateTime);
+        const end = event.end?.dateTime ? new Date(event.end.dateTime) : null;
+        
+        let str = start.toLocaleString(undefined, { 
+          weekday: 'short', 
+          month: 'short', 
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
+        });
+        
+        if (end) {
+          str += ` - ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+        }
+        
+        return str;
+      }
+      
+      return 'Unknown time';
+    }
+    
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    // Setup event listeners
+    function setupEventListeners() {
+      // Save config
+      document.getElementById('save-config').addEventListener('click', saveConfig);
+      
+      // Toggle sync
+      document.getElementById('toggle-sync').addEventListener('click', toggleSync);
+      
+      // Sync now
+      document.getElementById('sync-now').addEventListener('click', syncNow);
+      
+      // Scan duplicates
+      document.getElementById('scan-duplicates').addEventListener('click', scanDuplicates);
+      
+      // Tabs
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+          
+          tab.classList.add('active');
+          document.getElementById(`${tab.dataset.tab}-tab`).classList.remove('hidden');
+        });
+      });
+    }
+    
+    // Save configuration
+    async function saveConfig() {
+      const calendar1 = document.getElementById('calendar1');
+      const calendar2 = document.getElementById('calendar2');
+      const prefix1 = document.getElementById('prefix1').value;
+      const prefix2 = document.getElementById('prefix2').value;
+      
+      if (!calendar1.value || !calendar2.value) {
+        alert('Please select calendars for both accounts');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/sync/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            calendarId1: calendar1.value,
+            calendarId2: calendar2.value,
+            calendarName1: calendar1.options[calendar1.selectedIndex].text,
+            calendarName2: calendar2.options[calendar2.selectedIndex].text,
+            prefix1,
+            prefix2,
+            enabled: false
+          })
+        });
+        
+        if (response.ok) {
+          showResult('Configuration saved! Click "Enable Sync" to start syncing.', 'success');
+        }
+      } catch (error) {
+        console.error('Error saving config:', error);
+        showResult('Error saving configuration', 'warning');
+      }
+    }
+    
+    // Toggle sync
+    async function toggleSync() {
+      try {
+        const response = await fetch('/api/sync/toggle', { method: 'POST' });
+        const data = await response.json();
+        
+        updateSyncStatus(data.enabled);
+        showResult(data.enabled ? 'Sync enabled!' : 'Sync disabled', 'info');
+      } catch (error) {
+        console.error('Error toggling sync:', error);
+      }
+    }
+    
+    // Sync now
+    async function syncNow() {
+      const btn = document.getElementById('sync-now');
+      btn.disabled = true;
+      btn.textContent = 'Syncing...';
+      
+      try {
+        const response = await fetch('/api/sync/now', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+          const r = data.results;
+          showResult(
+            `Sync complete: ${r.synced} created, ${r.updated} updated, ${r.deleted} deleted`,
+            'success'
+          );
+        } else {
+          showResult(`Sync failed: ${data.message}`, 'warning');
+        }
+        
+        await loadLogs();
+        await loadSyncConfig();
+      } catch (error) {
+        console.error('Error syncing:', error);
+        showResult('Error running sync', 'warning');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync Now';
+      }
+    }
+    
+    // Show result message
+    function showResult(message, type) {
+      const resultDiv = document.getElementById('sync-result');
+      resultDiv.textContent = message;
+      resultDiv.className = `alert alert-${type}`;
+      resultDiv.classList.remove('hidden');
+      
+      setTimeout(() => {
+        resultDiv.classList.add('hidden');
+      }, 5000);
+    }
+  </script>
+</body>
+</html>
