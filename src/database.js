@@ -6,13 +6,13 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Ensure data directory exists before opening database
-const dataDir = join(__dirname, '../data');
+// Use DATA_DIR env variable for persistent storage (e.g., Render disk), or fallback to local data folder
+const dataDir = process.env.DATA_DIR || join(__dirname, '../data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const db = new Database(join(__dirname, '../data/calendar-sync.db'));
+const db = new Database(join(dataDir, 'calendar-sync.db'));
 
 export function initDatabase() {
   // Create tables
