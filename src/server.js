@@ -38,6 +38,11 @@ app.use(session({
 // Serve static files
 app.use(express.static(join(__dirname, '../public')));
 
+// Health check endpoint for Fly.io
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // Routes
 app.use('/auth', authRouter);
 app.use('/api/calendars', calendarRouter);
