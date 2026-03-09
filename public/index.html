@@ -1128,10 +1128,17 @@
         
         if (data.success) {
           const r = data.results;
-          showResult(
-            `Sync complete: ${r.synced} created, ${r.updated} updated, ${r.deleted} deleted`,
-            'success'
-          );
+          const hasActivity = r.synced > 0 || r.updated > 0 || r.deleted > 0;
+          
+          if (hasActivity) {
+            const parts = [];
+            if (r.synced > 0) parts.push(`${r.synced} created`);
+            if (r.updated > 0) parts.push(`${r.updated} updated`);
+            if (r.deleted > 0) parts.push(`${r.deleted} deleted`);
+            showResult(`✓ ${parts.join(', ')}`, 'success');
+          } else {
+            showResult('✓ All good — calendars in sync', 'success');
+          }
         } else {
           showResult(`Sync failed: ${data.message}`, 'warning');
         }

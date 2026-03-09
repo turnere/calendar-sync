@@ -98,12 +98,12 @@ export async function getEventsForSync(auth, calendarId, syncToken = null) {
   if (syncToken) {
     params.syncToken = syncToken;
   } else {
-    // Initial sync - get events from past week and future 6 months
+    // Initial sync - get events from past week and future 12 months
     const timeMin = new Date();
     timeMin.setDate(timeMin.getDate() - 7);
     
     const timeMax = new Date();
-    timeMax.setMonth(timeMax.getMonth() + 6);
+    timeMax.setMonth(timeMax.getMonth() + 12);
     
     params.timeMin = timeMin.toISOString();
     params.timeMax = timeMax.toISOString();
