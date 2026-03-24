@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { getStoredAuthClient } from './auth.js';
+import { notifySyncFailure, notifySyncRecovered, notifyAccountDisconnected } from './notify.js';
 import { 
   getSyncConfig, 
   saveSyncConfig, 
@@ -345,6 +346,8 @@ async function performSync() {
   
   if (!auth1 || !auth2) {
     console.log('Both accounts must be connected for sync');
+    if (!auth1) await notifyAccountDisconnected(1, 'No stored tokens found.');
+    if (!auth2) await notifyAccountDisconnected(2, 'No stored tokens found.');
     return { success: false, message: 'Both accounts must be connected' };
   }
   
@@ -378,11 +381,19 @@ async function performSync() {
     const message = `Sync complete: ${results.synced} created, ${results.updated} updated, ${results.deleted} deleted, ${results.skipped} skipped, ${results.duplicatesFound} duplicates found`;
     console.log(message);
     addSyncLog('sync_complete', null, null, 'success', message);
+    await notifySyncRecovered();
     
     return { success: true, results, message };
   } catch (error) {
     console.error('Sync error:', error);
     addSyncLog('sync_error', null, null, 'error', error.message);
+    // Check if it's an auth error for a specific account
+    const msg = error.message || '';
+    if (msg.includes('invalid_grant') || msg.includes('Token has been expired or revoked')) {
+      await notifyAccountDisconnected(0, msg);
+    } else {
+      await notifySyncFailure(msg);
+    }
     return { success: false, message: error.message, results };
   }
 }

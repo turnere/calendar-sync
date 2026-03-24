@@ -132,9 +132,82 @@ Make sure:
 - Disconnect and reconnect the affected account
 - The app requests offline access, so refresh tokens should work automatically
 
-## Running in Production
+## Running with GitHub Actions (Recommended)
 
-For production use:
+You can run the sync as a scheduled GitHub Actions workflow instead of hosting a server. The workflow runs every 15 minutes (configurable) and persists state between runs via cache.
+
+### 1. Initial Setup (Local, One Time)
+
+Run the web server locally to complete the OAuth flow and select your calendars:
+
+```bash
+npm install
+npm start
+```
+
+1. Open http://localhost:3000
+2. Connect both Google accounts
+3. Select calendars and configure prefixes
+4. Stop the server (Ctrl+C)
+
+### 2. Export Configuration
+
+```bash
+npm run export-config
+```
+
+This prints all the secret values you need. Copy each one.
+
+### 3. Add GitHub Secrets
+
+Go to your repository on GitHub → **Settings** → **Secrets and variables** → **Actions** → **New repository secret** and add each secret:
+
+| Secret | Description |
+|--------|-------------|
+| `GOOGLE_CLIENT_ID_1` | OAuth client ID for account 1 |
+| `GOOGLE_CLIENT_SECRET_1` | OAuth client secret for account 1 |
+| `GOOGLE_CLIENT_ID_2` | OAuth client ID for account 2 |
+| `GOOGLE_CLIENT_SECRET_2` | OAuth client secret for account 2 |
+| `ACCOUNT1_TOKENS` | Full JSON token object for account 1 |
+| `ACCOUNT1_EMAIL` | Email for account 1 |
+| `ACCOUNT2_TOKENS` | Full JSON token object for account 2 |
+| `ACCOUNT2_EMAIL` | Email for account 2 |
+| `CALENDAR_ID_1` | Calendar ID to sync from account 1 |
+| `CALENDAR_ID_2` | Calendar ID to sync from account 2 |
+| `PREFIX_1` | *(optional)* Prefix for account 1 events, default `[Business] ` |
+| `PREFIX_2` | *(optional)* Prefix for account 2 events, default `[Personal] ` |
+| `CALENDAR_NAME_1` | *(optional)* Display name for calendar 1 |
+| `CALENDAR_NAME_2` | *(optional)* Display name for calendar 2 |
+
+### 4. Push and Enable
+
+Push to GitHub. The workflow at `.github/workflows/sync.yml` will run automatically on the cron schedule. You can also trigger it manually from the **Actions** tab.
+
+### Adjusting the Schedule
+
+Edit the cron in `.github/workflows/sync.yml`:
+
+```yaml
+schedule:
+  - cron: '*/15 * * * *'  # every 15 minutes
+  # - cron: '*/5 * * * *'  # every 5 minutes (uses more Actions minutes)
+  # - cron: '*/30 * * * *' # every 30 minutes
+```
+
+### Re-authenticating
+
+If Google tokens expire or are revoked, re-run the local setup:
+
+```bash
+npm start          # connect accounts in browser
+npm run export-config  # get new token values
+```
+
+Then update the `ACCOUNT1_TOKENS` and `ACCOUNT2_TOKENS` secrets in GitHub.
+
+---
+
+## Running on a Server (Fly.io / Render / Self-hosted)
 
 1. Set `BASE_URL` to your production URL
 2. Add production redirect URIs to Google Cloud

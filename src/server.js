@@ -6,7 +6,8 @@ import { dirname, join } from 'path';
 import { authRouter, getAuthClient } from './auth.js';
 import { calendarRouter } from './calendar.js';
 import { syncRouter, startSyncScheduler } from './sync.js';
-import { initDatabase, getAccountInfo } from './database.js';
+import { initDatabase, getAccountInfo, getTokens, getSyncConfig } from './database.js';
+import { isConfigured as isHabiticaConfigured } from './notify.js';
 
 config();
 
@@ -66,7 +67,19 @@ app.use(express.static(join(__dirname, '../public')));
 
 // Health check endpoint for Fly.io
 app.get('/health', (req, res) => {
-  res.status(200).send('OK');
+  const tokens1 = getTokens(1);
+  const tokens2 = getTokens(2);
+  const config = getSyncConfig();
+  const status = {
+    healthy: true,
+    account1: !!tokens1,
+    account2: !!tokens2,
+    syncEnabled: !!config?.enabled,
+    lastSync: config?.last_sync || null,
+    habitica: isHabiticaConfigured(),
+  };
+  status.healthy = status.account1 && status.account2 && status.syncEnabled;
+  res.status(status.healthy ? 200 : 200).json(status);
 });
 
 // Routes
