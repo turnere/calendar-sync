@@ -28,10 +28,13 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY DEFAULT 1,
       calendar_id_1 TEXT,
       calendar_id_2 TEXT,
+      calendar_id_3 TEXT,
       calendar_name_1 TEXT,
       calendar_name_2 TEXT,
+      calendar_name_3 TEXT,
       prefix_1 TEXT DEFAULT '[Business] ',
       prefix_2 TEXT DEFAULT '[Personal] ',
+      suffix_3 TEXT DEFAULT ' Wedding',
       enabled INTEGER DEFAULT 0,
       last_sync DATETIME,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -47,7 +50,7 @@ export function initDatabase() {
       event_hash TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(source_event_id, source_account)
+      UNIQUE(source_event_id, source_account, target_calendar_id)
     );
     
     CREATE TABLE IF NOT EXISTS sync_log (
@@ -73,6 +76,43 @@ export function initDatabase() {
     );
   `);
   
+  // Migrations for existing databases
+  const configColumns = db.pragma("table_info('sync_config')").map(c => c.name);
+  if (!configColumns.includes('calendar_id_3')) {
+    db.exec("ALTER TABLE sync_config ADD COLUMN calendar_id_3 TEXT");
+    db.exec("ALTER TABLE sync_config ADD COLUMN calendar_name_3 TEXT");
+    db.exec("ALTER TABLE sync_config ADD COLUMN suffix_3 TEXT DEFAULT ' Wedding'");
+    console.log('Added calendar 3 columns to sync_config');
+  }
+
+  // Migrate synced_events unique constraint for multi-target sync
+  const indexes = db.pragma("index_list('synced_events')");
+  const needsMigration = indexes.some(idx => {
+    if (!idx.unique) return false;
+    const cols = db.pragma(`index_info('${idx.name}')`).map(c => c.name);
+    return cols.length === 2 && cols.includes('source_event_id') && cols.includes('source_account');
+  });
+  if (needsMigration) {
+    db.exec(`
+      CREATE TABLE synced_events_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_account INTEGER NOT NULL,
+        source_event_id TEXT NOT NULL,
+        target_event_id TEXT NOT NULL,
+        source_calendar_id TEXT NOT NULL,
+        target_calendar_id TEXT NOT NULL,
+        event_hash TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(source_event_id, source_account, target_calendar_id)
+      );
+      INSERT OR IGNORE INTO synced_events_new SELECT * FROM synced_events;
+      DROP TABLE synced_events;
+      ALTER TABLE synced_events_new RENAME TO synced_events;
+    `);
+    console.log('Migrated synced_events for multi-target sync');
+  }
+
   console.log('Database initialized');
 }
 
@@ -100,16 +140,19 @@ export function getAccountInfo(accountNum) {
 export function saveSyncConfig(config) {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO sync_config 
-    (id, calendar_id_1, calendar_id_2, calendar_name_1, calendar_name_2, prefix_1, prefix_2, enabled, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    (id, calendar_id_1, calendar_id_2, calendar_id_3, calendar_name_1, calendar_name_2, calendar_name_3, prefix_1, prefix_2, suffix_3, enabled, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `);
   stmt.run(
     config.calendarId1,
     config.calendarId2,
+    config.calendarId3 || null,
     config.calendarName1,
     config.calendarName2,
+    config.calendarName3 || null,
     config.prefix1 || '[Business] ',
     config.prefix2 || '[Personal] ',
+    config.suffix3 ?? ' Wedding',
     config.enabled ? 1 : 0
   );
 }
@@ -134,7 +177,11 @@ export function saveSyncedEvent(sourceAccount, sourceEventId, targetEventId, sou
   stmt.run(sourceAccount, sourceEventId, targetEventId, sourceCalendarId, targetCalendarId, eventHash);
 }
 
-export function getSyncedEvent(sourceEventId, sourceAccount) {
+export function getSyncedEvent(sourceEventId, sourceAccount, targetCalendarId = null) {
+  if (targetCalendarId) {
+    const stmt = db.prepare('SELECT * FROM synced_events WHERE source_event_id = ? AND source_account = ? AND target_calendar_id = ?');
+    return stmt.get(sourceEventId, sourceAccount, targetCalendarId);
+  }
   const stmt = db.prepare('SELECT * FROM synced_events WHERE source_event_id = ? AND source_account = ?');
   return stmt.get(sourceEventId, sourceAccount);
 }
@@ -144,9 +191,14 @@ export function getSyncedEventByTargetId(targetEventId) {
   return stmt.get(targetEventId);
 }
 
-export function deleteSyncedEvent(sourceEventId, sourceAccount) {
-  const stmt = db.prepare('DELETE FROM synced_events WHERE source_event_id = ? AND source_account = ?');
-  stmt.run(sourceEventId, sourceAccount);
+export function deleteSyncedEvent(sourceEventId, sourceAccount, targetCalendarId = null) {
+  if (targetCalendarId) {
+    const stmt = db.prepare('DELETE FROM synced_events WHERE source_event_id = ? AND source_account = ? AND target_calendar_id = ?');
+    stmt.run(sourceEventId, sourceAccount, targetCalendarId);
+  } else {
+    const stmt = db.prepare('DELETE FROM synced_events WHERE source_event_id = ? AND source_account = ?');
+    stmt.run(sourceEventId, sourceAccount);
+  }
 }
 
 export function getAllSyncedEvents() {
@@ -157,6 +209,11 @@ export function getAllSyncedEvents() {
 export function getSyncedEventsByAccount(sourceAccount) {
   const stmt = db.prepare('SELECT * FROM synced_events WHERE source_account = ?');
   return stmt.all(sourceAccount);
+}
+
+export function getSyncedEventsByAccountAndTarget(sourceAccount, targetCalendarId) {
+  const stmt = db.prepare('SELECT * FROM synced_events WHERE source_account = ? AND target_calendar_id = ?');
+  return stmt.all(sourceAccount, targetCalendarId);
 }
 
 // Sync log management

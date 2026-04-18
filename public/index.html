@@ -501,6 +501,22 @@
         </div>
       </div>
       
+      <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 25px 0;">
+      
+      <div class="form-group">
+        <label for="calendar3">Wedding Calendar from Account 1 (optional, one-way sync):</label>
+        <select id="calendar3">
+          <option value="">None (disabled)</option>
+        </select>
+        <small style="color: #999;">Events from this calendar will be copied to both calendars above</small>
+      </div>
+      
+      <div id="suffix-group" class="form-group" style="display: none;">
+        <label for="suffix3">Suffix for Wedding Calendar events:</label>
+        <input type="text" id="suffix3" placeholder=" Wedding" value=" Wedding">
+        <small style="color: #999;">Appended to event titles when synced (e.g. "Rehearsal" → "Rehearsal Wedding")</small>
+      </div>
+      
       <button id="save-config" class="btn btn-primary">Save Configuration</button>
     </div>
     
@@ -668,6 +684,15 @@
         if (Array.isArray(data1)) {
           state.calendars1 = data1;
           populateCalendarSelect('calendar1', state.calendars1);
+          // Also populate calendar 3 dropdown from account 1's calendars
+          const select3 = document.getElementById('calendar3');
+          select3.innerHTML = '<option value="">None (disabled)</option>';
+          state.calendars1.forEach(cal => {
+            const option = document.createElement('option');
+            option.value = cal.id;
+            option.textContent = cal.summary + (cal.primary ? ' (Primary)' : '');
+            select3.appendChild(option);
+          });
         } else {
           console.error('Error loading calendars for account 1:', data1);
           const select = document.getElementById('calendar1');
@@ -717,6 +742,13 @@
         }
         if (config.prefix_2) {
           document.getElementById('prefix2').value = config.prefix_2;
+        }
+        if (config.calendar_id_3) {
+          document.getElementById('calendar3').value = config.calendar_id_3;
+          document.getElementById('suffix-group').style.display = '';
+        }
+        if (config.suffix_3) {
+          document.getElementById('suffix3').value = config.suffix_3;
         }
         
         updateSyncStatus(config.enabled, config.last_sync);
@@ -1055,6 +1087,11 @@
       // Scan duplicates
       document.getElementById('scan-duplicates').addEventListener('click', scanDuplicates);
       
+      // Calendar 3 toggle suffix visibility
+      document.getElementById('calendar3').addEventListener('change', (e) => {
+        document.getElementById('suffix-group').style.display = e.target.value ? '' : 'none';
+      });
+      
       // Tabs
       document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
@@ -1071,8 +1108,10 @@
     async function saveConfig() {
       const calendar1 = document.getElementById('calendar1');
       const calendar2 = document.getElementById('calendar2');
+      const calendar3 = document.getElementById('calendar3');
       const prefix1 = document.getElementById('prefix1').value;
       const prefix2 = document.getElementById('prefix2').value;
+      const suffix3 = document.getElementById('suffix3').value;
       
       if (!calendar1.value || !calendar2.value) {
         alert('Please select calendars for both accounts');
@@ -1080,10 +1119,7 @@
       }
       
       try {
-        const response = await fetch('/api/sync/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const body = {
             calendarId1: calendar1.value,
             calendarId2: calendar2.value,
             calendarName1: calendar1.options[calendar1.selectedIndex].text,
@@ -1091,7 +1127,18 @@
             prefix1,
             prefix2,
             enabled: false
-          })
+        };
+        
+        if (calendar3.value) {
+          body.calendarId3 = calendar3.value;
+          body.calendarName3 = calendar3.options[calendar3.selectedIndex].text;
+          body.suffix3 = suffix3 || ' Wedding';
+        }
+        
+        const response = await fetch('/api/sync/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
         });
         
         if (response.ok) {

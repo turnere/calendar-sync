@@ -11,6 +11,7 @@ import {
   deleteSyncedEvent,
   getAllSyncedEvents,
   getSyncedEventsByAccount,
+  getSyncedEventsByAccountAndTarget,
   updateLastSync,
   addSyncLog,
   getSyncLogs,
@@ -333,6 +334,27 @@ function prepareEventForSync(sourceEvent, prefix, sourceAccount, config) {
   return syncedEvent;
 }
 
+// Prepare event for syncing from calendar 3 (append suffix instead of prefix)
+function prepareEventForCal3(sourceEvent, suffix) {
+  const syncedEvent = {
+    summary: (sourceEvent.summary || 'No Title') + suffix,
+    description: addSyncMarker(sourceEvent.description || '', sourceEvent.id, 3),
+    start: sourceEvent.start,
+    end: sourceEvent.end,
+    location: sourceEvent.location,
+    reminders: { useDefault: true },
+    transparency: sourceEvent.transparency || 'opaque',
+    visibility: 'default'
+  };
+
+  if (sourceEvent.start?.date) {
+    syncedEvent.start = { date: sourceEvent.start.date };
+    syncedEvent.end = { date: sourceEvent.end.date };
+  }
+
+  return syncedEvent;
+}
+
 // Main sync function
 async function performSync() {
   const config = getSyncConfig();
@@ -378,8 +400,24 @@ async function performSync() {
     await syncEvents(events2, events1, auth2, auth1, config, 2, results);
     
     // Clean up orphaned synced events (source event was deleted entirely)
-    await cleanupOrphanedEvents(events1, auth2, config, 1, results);
-    await cleanupOrphanedEvents(events2, auth1, config, 2, results);
+    await cleanupOrphanedEvents(events1, auth2, config.calendar_id_2, 1, results);
+    await cleanupOrphanedEvents(events2, auth1, config.calendar_id_1, 2, results);
+    
+    // Sync calendar 3 (one-way) to both calendars if configured
+    if (config.calendar_id_3) {
+      console.log('Fetching events from calendar 3 (wedding)...');
+      const { events: events3 } = await getEventsForSync(auth1, config.calendar_id_3);
+      console.log(`Found ${events3.length} events in calendar 3`);
+      
+      // Sync cal3 to cal1 (same account)
+      await syncCal3Events(events3, events1, auth1, config.calendar_id_1, config.calendar_id_3, config, results);
+      // Sync cal3 to cal2
+      await syncCal3Events(events3, events2, auth2, config.calendar_id_2, config.calendar_id_3, config, results);
+      
+      // Clean up orphaned cal3 synced events
+      await cleanupOrphanedEvents(events3, auth1, config.calendar_id_1, 3, results);
+      await cleanupOrphanedEvents(events3, auth2, config.calendar_id_2, 3, results);
+    }
     
     updateLastSync();
     
@@ -404,9 +442,8 @@ async function performSync() {
 }
 
 // Clean up orphaned synced events where the source event no longer exists
-async function cleanupOrphanedEvents(sourceEvents, targetAuth, config, sourceAccount, results) {
-  const targetCalendarId = sourceAccount === 1 ? config.calendar_id_2 : config.calendar_id_1;
-  const syncedRecords = getSyncedEventsByAccount(sourceAccount);
+async function cleanupOrphanedEvents(sourceEvents, targetAuth, targetCalendarId, sourceAccount, results) {
+  const syncedRecords = getSyncedEventsByAccountAndTarget(sourceAccount, targetCalendarId);
   
   // Build a set of current source event IDs for fast lookup
   const sourceEventIds = new Set(sourceEvents.map(e => e.id));
@@ -417,14 +454,14 @@ async function cleanupOrphanedEvents(sourceEvents, targetAuth, config, sourceAcc
     // Source event no longer exists - delete the synced copy
     try {
       await deleteEvent(targetAuth, targetCalendarId, record.target_event_id);
-      deleteSyncedEvent(record.source_event_id, sourceAccount);
+      deleteSyncedEvent(record.source_event_id, sourceAccount, targetCalendarId);
       results.deleted++;
       addSyncLog('delete', sourceAccount, `orphaned:${record.source_event_id}`, 'success', 'Deleted synced event (source was deleted)');
       console.log(`Deleted orphaned synced event: source ${record.source_event_id} from account ${sourceAccount}`);
     } catch (err) {
       // Target event may already be deleted
       if (err.code === 404 || err.message?.includes('Not Found')) {
-        deleteSyncedEvent(record.source_event_id, sourceAccount);
+        deleteSyncedEvent(record.source_event_id, sourceAccount, targetCalendarId);
       } else {
         console.error(`Error deleting orphaned event ${record.target_event_id}:`, err.message);
         results.errors.push({ event: `orphaned:${record.source_event_id}`, error: err.message });
@@ -459,9 +496,9 @@ async function syncEvents(sourceEvents, targetEvents, sourceAuth, targetAuth, co
         continue;
       }
       
-      // Check if this event was synced FROM the other calendar (avoid ping-pong)
+      // Check if this event was synced FROM the other calendar or from cal3 (avoid ping-pong)
       const marker = extractSyncMarker(sourceEvent.description);
-      if (marker && marker.sourceAccount === targetAccount) {
+      if (marker && (marker.sourceAccount === targetAccount || marker.sourceAccount === 3)) {
         results.skipped++;
         continue;
       }
@@ -532,6 +569,101 @@ async function syncEvents(sourceEvents, targetEvents, sourceAuth, targetAuth, co
   }
 }
 
+// Sync calendar 3 events one-way to a target calendar
+async function syncCal3Events(sourceEvents, targetEvents, targetAuth, targetCalendarId, sourceCalendarId, config, results) {
+  const suffix = config.suffix_3 || ' Wedding';
+  
+  for (const sourceEvent of sourceEvents) {
+    try {
+      // Skip cancelled events
+      if (sourceEvent.status === 'cancelled') {
+        const syncedRecord = getSyncedEvent(sourceEvent.id, 3, targetCalendarId);
+        if (syncedRecord) {
+          try {
+            await deleteEvent(targetAuth, targetCalendarId, syncedRecord.target_event_id);
+            deleteSyncedEvent(sourceEvent.id, 3, targetCalendarId);
+            results.deleted++;
+            addSyncLog('delete', 3, sourceEvent.summary, 'success', 'Deleted cancelled cal3 event');
+          } catch (err) {
+            deleteSyncedEvent(sourceEvent.id, 3, targetCalendarId);
+          }
+        }
+        continue;
+      }
+      
+      // Skip if this event already has a sync marker (it's a synced copy, not an original)
+      const marker = extractSyncMarker(sourceEvent.description);
+      if (marker) {
+        continue;
+      }
+      
+      const existingSyncRecord = getSyncedEvent(sourceEvent.id, 3, targetCalendarId);
+      const eventHash = createEventHash(sourceEvent);
+      
+      if (existingSyncRecord) {
+        // Already synced - check if changed
+        if (existingSyncRecord.event_hash === eventHash) {
+          results.skipped++;
+          continue;
+        }
+        
+        // Update the synced copy
+        try {
+          const updatedEvent = prepareEventForCal3(sourceEvent, suffix);
+          await updateEvent(targetAuth, targetCalendarId, existingSyncRecord.target_event_id, updatedEvent);
+          saveSyncedEvent(3, sourceEvent.id, existingSyncRecord.target_event_id,
+            sourceCalendarId, targetCalendarId, eventHash);
+          results.updated++;
+          addSyncLog('update', 3, sourceEvent.summary, 'success', 'Updated cal3 event');
+        } catch (err) {
+          console.error(`Error updating cal3 event ${sourceEvent.id}:`, err.message);
+          results.errors.push({ event: sourceEvent.summary, error: err.message });
+          addSyncLog('update', 3, sourceEvent.summary, 'error', err.message);
+        }
+        continue;
+      }
+      
+      // Check for existing duplicate in target (same suffixed title at same time)
+      const syncedTitle = (sourceEvent.summary || 'No Title') + suffix;
+      const eventStart = sourceEvent.start?.dateTime || sourceEvent.start?.date;
+      const existingDup = targetEvents.find(e => {
+        const eStart = e.start?.dateTime || e.start?.date;
+        return eStart === eventStart && e.summary?.toLowerCase() === syncedTitle.toLowerCase();
+      });
+      
+      if (existingDup) {
+        // Link to existing instead of creating duplicate
+        console.log(`Cal3 event already exists in target: "${existingDup.summary}" - linking`);
+        saveSyncedEvent(3, sourceEvent.id, existingDup.id,
+          sourceCalendarId, targetCalendarId, eventHash);
+        results.skipped++;
+        addSyncLog('auto_linked', 3, sourceEvent.summary, 'success',
+          `Linked to existing "${existingDup.summary}"`);
+        continue;
+      }
+      
+      // Create new event in target
+      try {
+        const newEvent = prepareEventForCal3(sourceEvent, suffix);
+        const createdEvent = await createEvent(targetAuth, targetCalendarId, newEvent);
+        
+        saveSyncedEvent(3, sourceEvent.id, createdEvent.id,
+          sourceCalendarId, targetCalendarId, eventHash);
+        
+        results.synced++;
+        addSyncLog('create', 3, sourceEvent.summary, 'success', 'Created cal3 synced event');
+      } catch (err) {
+        console.error(`Error creating cal3 event ${sourceEvent.id}:`, err.message);
+        results.errors.push({ event: sourceEvent.summary, error: err.message });
+        addSyncLog('create', 3, sourceEvent.summary, 'error', err.message);
+      }
+    } catch (err) {
+      console.error(`Error processing cal3 event:`, err);
+      results.errors.push({ event: sourceEvent.summary || 'Unknown', error: err.message });
+    }
+  }
+}
+
 // API Routes
 
 // Get sync configuration
@@ -542,15 +674,18 @@ syncRouter.get('/config', (req, res) => {
 
 // Save sync configuration
 syncRouter.post('/config', (req, res) => {
-  const { calendarId1, calendarId2, calendarName1, calendarName2, prefix1, prefix2, enabled } = req.body;
+  const { calendarId1, calendarId2, calendarId3, calendarName1, calendarName2, calendarName3, prefix1, prefix2, suffix3, enabled } = req.body;
   
   saveSyncConfig({
     calendarId1,
     calendarId2,
+    calendarId3: calendarId3 || null,
     calendarName1,
     calendarName2,
+    calendarName3: calendarName3 || null,
     prefix1: prefix1 || '[Business] ',
     prefix2: prefix2 || '[Personal] ',
+    suffix3: suffix3 ?? ' Wedding',
     enabled: enabled ?? false
   });
   
@@ -583,10 +718,13 @@ syncRouter.post('/toggle', (req, res) => {
       ...config,
       calendarId1: config.calendar_id_1,
       calendarId2: config.calendar_id_2,
+      calendarId3: config.calendar_id_3,
       calendarName1: config.calendar_name_1,
       calendarName2: config.calendar_name_2,
+      calendarName3: config.calendar_name_3,
       prefix1: config.prefix_1,
       prefix2: config.prefix_2,
+      suffix3: config.suffix_3,
       enabled: !config.enabled
     });
     res.json({ enabled: !config.enabled });
