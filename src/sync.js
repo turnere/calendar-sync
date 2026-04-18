@@ -334,10 +334,10 @@ function prepareEventForSync(sourceEvent, prefix, sourceAccount, config) {
   return syncedEvent;
 }
 
-// Prepare event for syncing from calendar 3 (append suffix instead of prefix)
-function prepareEventForCal3(sourceEvent, suffix) {
+// Prepare event for syncing from calendar 3 (add prefix from cal1 + append suffix)
+function prepareEventForCal3(sourceEvent, prefix, suffix) {
   const syncedEvent = {
-    summary: (sourceEvent.summary || 'No Title') + suffix,
+    summary: prefix + (sourceEvent.summary || 'No Title') + suffix,
     description: addSyncMarker(sourceEvent.description || '', sourceEvent.id, 3),
     start: sourceEvent.start,
     end: sourceEvent.end,
@@ -571,6 +571,7 @@ async function syncEvents(sourceEvents, targetEvents, sourceAuth, targetAuth, co
 
 // Sync calendar 3 events one-way to a target calendar
 async function syncCal3Events(sourceEvents, targetEvents, targetAuth, targetCalendarId, sourceCalendarId, config, results) {
+  const prefix = config.prefix_1 || '';
   const suffix = config.suffix_3 || ' Wedding';
   
   for (const sourceEvent of sourceEvents) {
@@ -609,7 +610,7 @@ async function syncCal3Events(sourceEvents, targetEvents, targetAuth, targetCale
         
         // Update the synced copy
         try {
-          const updatedEvent = prepareEventForCal3(sourceEvent, suffix);
+          const updatedEvent = prepareEventForCal3(sourceEvent, prefix, suffix);
           await updateEvent(targetAuth, targetCalendarId, existingSyncRecord.target_event_id, updatedEvent);
           saveSyncedEvent(3, sourceEvent.id, existingSyncRecord.target_event_id,
             sourceCalendarId, targetCalendarId, eventHash);
@@ -623,8 +624,8 @@ async function syncCal3Events(sourceEvents, targetEvents, targetAuth, targetCale
         continue;
       }
       
-      // Check for existing duplicate in target (same suffixed title at same time)
-      const syncedTitle = (sourceEvent.summary || 'No Title') + suffix;
+      // Check for existing duplicate in target (same prefixed+suffixed title at same time)
+      const syncedTitle = prefix + (sourceEvent.summary || 'No Title') + suffix;
       const eventStart = sourceEvent.start?.dateTime || sourceEvent.start?.date;
       const existingDup = targetEvents.find(e => {
         const eStart = e.start?.dateTime || e.start?.date;
@@ -644,7 +645,7 @@ async function syncCal3Events(sourceEvents, targetEvents, targetAuth, targetCale
       
       // Create new event in target
       try {
-        const newEvent = prepareEventForCal3(sourceEvent, suffix);
+        const newEvent = prepareEventForCal3(sourceEvent, prefix, suffix);
         const createdEvent = await createEvent(targetAuth, targetCalendarId, newEvent);
         
         saveSyncedEvent(3, sourceEvent.id, createdEvent.id,
