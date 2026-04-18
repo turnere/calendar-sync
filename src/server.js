@@ -41,7 +41,6 @@ const requireLogin = (req, res, next) => {
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(requireLogin);
 
 // Trust proxy for secure cookies behind Render's load balancer
 if (process.env.NODE_ENV === 'production') {
@@ -57,6 +56,8 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000 
   } // 24 hours
 }));
+
+app.use(requireLogin);
 
 // Serve static files
 app.use(express.static(join(__dirname, '../public')));
