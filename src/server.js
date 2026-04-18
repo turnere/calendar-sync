@@ -17,35 +17,31 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Basic Auth middleware (if BASIC_AUTH_PASSWORD is set)
-const basicAuth = (req, res, next) => {
+// Session-based auth middleware (if BASIC_AUTH_PASSWORD is set)
+const requireLogin = (req, res, next) => {
   const password = process.env.BASIC_AUTH_PASSWORD;
   if (!password) return next(); // Skip if no password configured
   
-  // Allow health checks without auth
-  if (req.path === '/health') return next();
+  // Allow health checks and login page without auth
+  if (req.path === '/health' || req.path === '/login') return next();
   
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Basic ')) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="Calendar Sync"');
-    return res.status(401).send('Authentication required');
-  }
-  
-  const credentials = Buffer.from(authHeader.slice(6), 'base64').toString();
-  const [user, pass] = credentials.split(':');
-  
-  if (pass === password) {
+  if (req.session.authenticated) {
     return next();
   }
   
-  res.setHeader('WWW-Authenticate', 'Basic realm="Calendar Sync"');
-  return res.status(401).send('Invalid credentials');
+  // For API requests, return 401
+  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  // For page requests, redirect to login
+  return res.redirect('/login');
 };
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(basicAuth);
+app.use(requireLogin);
 
 // Trust proxy for secure cookies behind Render's load balancer
 if (process.env.NODE_ENV === 'production') {
@@ -64,6 +60,78 @@ app.use(session({
 
 // Serve static files
 app.use(express.static(join(__dirname, '../public')));
+
+// Login page
+app.get('/login', (req, res) => {
+  const password = process.env.BASIC_AUTH_PASSWORD;
+  if (!password || req.session.authenticated) {
+    return res.redirect('/');
+  }
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Calendar Sync</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: #f5f7fa; color: #333; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card { background: white; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.1); padding: 40px; width: 100%; max-width: 400px; text-align: center; }
+    .login-card h1 { font-size: 1.8rem; margin-bottom: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .login-card p { color: #999; margin-bottom: 30px; }
+    .form-group { margin-bottom: 20px; text-align: left; }
+    .form-group label { display: block; margin-bottom: 6px; font-weight: 500; color: #555; font-size: 0.9rem; }
+    .form-group input { width: 100%; padding: 12px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 1rem; transition: border-color 0.3s; }
+    .form-group input:focus { outline: none; border-color: #667eea; }
+    .btn-login { width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; transition: opacity 0.3s; }
+    .btn-login:hover { opacity: 0.9; }
+    .error { background: #ffebee; color: #c62828; padding: 10px; border-radius: 6px; margin-bottom: 20px; font-size: 0.9rem; display: none; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h1>Calendar Sync</h1>
+    <p>Sign in to manage your sync</p>
+    <div id="error" class="error"></div>
+    <form action="/login" method="POST" id="login-form">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" value="admin" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" autofocus required>
+      </div>
+      <button type="submit" class="btn-login">Sign In</button>
+    </form>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error') === '1') {
+      const el = document.getElementById('error');
+      el.textContent = 'Invalid password. Please try again.';
+      el.style.display = 'block';
+    }
+  </script>
+</body>
+</html>`);
+});
+
+// Login POST handler
+app.post('/login', (req, res) => {
+  const password = process.env.BASIC_AUTH_PASSWORD;
+  if (req.body.password === password) {
+    req.session.authenticated = true;
+    return res.redirect('/');
+  }
+  return res.redirect('/login?error=1');
+});
+
+// Logout handler
+app.post('/logout', (req, res) => {
+  req.session.authenticated = false;
+  res.redirect('/login');
+});
 
 // Health check endpoint for Fly.io
 app.get('/health', (req, res) => {

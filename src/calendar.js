@@ -62,7 +62,7 @@ calendarRouter.get('/events/:accountNum/:calendarId', async (req, res) => {
     timeMin.setMonth(timeMin.getMonth() - 1);
     
     const timeMax = new Date();
-    timeMax.setMonth(timeMax.getMonth() + 3);
+    timeMax.setFullYear(timeMax.getFullYear() + 2);
     
     const response = await calendar.events.list({
       calendarId,
@@ -103,7 +103,7 @@ export async function getEventsForSync(auth, calendarId, syncToken = null) {
     timeMin.setDate(timeMin.getDate() - 7);
     
     const timeMax = new Date();
-    timeMax.setMonth(timeMax.getMonth() + 12);
+    timeMax.setFullYear(timeMax.getFullYear() + 2);
     
     params.timeMin = timeMin.toISOString();
     params.timeMax = timeMax.toISOString();

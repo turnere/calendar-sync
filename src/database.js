@@ -154,6 +154,11 @@ export function getAllSyncedEvents() {
   return stmt.all();
 }
 
+export function getSyncedEventsByAccount(sourceAccount) {
+  const stmt = db.prepare('SELECT * FROM synced_events WHERE source_account = ?');
+  return stmt.all(sourceAccount);
+}
+
 // Sync log management
 export function addSyncLog(action, sourceAccount, eventTitle, status, message) {
   const stmt = db.prepare(`

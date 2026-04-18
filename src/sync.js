@@ -10,6 +10,7 @@ import {
   getSyncedEventByTargetId,
   deleteSyncedEvent,
   getAllSyncedEvents,
+  getSyncedEventsByAccount,
   updateLastSync,
   addSyncLog,
   getSyncLogs,
@@ -376,6 +377,10 @@ async function performSync() {
     // Sync from account 2 to account 1
     await syncEvents(events2, events1, auth2, auth1, config, 2, results);
     
+    // Clean up orphaned synced events (source event was deleted entirely)
+    await cleanupOrphanedEvents(events1, auth2, config, 1, results);
+    await cleanupOrphanedEvents(events2, auth1, config, 2, results);
+    
     updateLastSync();
     
     const message = `Sync complete: ${results.synced} created, ${results.updated} updated, ${results.deleted} deleted, ${results.skipped} skipped, ${results.duplicatesFound} duplicates found`;
@@ -395,6 +400,36 @@ async function performSync() {
       await notifySyncFailure(msg);
     }
     return { success: false, message: error.message, results };
+  }
+}
+
+// Clean up orphaned synced events where the source event no longer exists
+async function cleanupOrphanedEvents(sourceEvents, targetAuth, config, sourceAccount, results) {
+  const targetCalendarId = sourceAccount === 1 ? config.calendar_id_2 : config.calendar_id_1;
+  const syncedRecords = getSyncedEventsByAccount(sourceAccount);
+  
+  // Build a set of current source event IDs for fast lookup
+  const sourceEventIds = new Set(sourceEvents.map(e => e.id));
+  
+  for (const record of syncedRecords) {
+    if (sourceEventIds.has(record.source_event_id)) continue;
+    
+    // Source event no longer exists - delete the synced copy
+    try {
+      await deleteEvent(targetAuth, targetCalendarId, record.target_event_id);
+      deleteSyncedEvent(record.source_event_id, sourceAccount);
+      results.deleted++;
+      addSyncLog('delete', sourceAccount, `orphaned:${record.source_event_id}`, 'success', 'Deleted synced event (source was deleted)');
+      console.log(`Deleted orphaned synced event: source ${record.source_event_id} from account ${sourceAccount}`);
+    } catch (err) {
+      // Target event may already be deleted
+      if (err.code === 404 || err.message?.includes('Not Found')) {
+        deleteSyncedEvent(record.source_event_id, sourceAccount);
+      } else {
+        console.error(`Error deleting orphaned event ${record.target_event_id}:`, err.message);
+        results.errors.push({ event: `orphaned:${record.source_event_id}`, error: err.message });
+      }
+    }
   }
 }
 
