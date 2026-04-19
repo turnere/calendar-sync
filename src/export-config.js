@@ -9,7 +9,7 @@
 import { config } from 'dotenv';
 config();
 
-import { initDatabase, getTokens, getAccountInfo, getSyncConfig } from './database.js';
+import { initDatabase, getTokens, getAccountInfo, getSyncConfig, getCalendars } from './database.js';
 
 initDatabase();
 
@@ -79,6 +79,16 @@ if (syncConfig) {
   console.log(`  Value: ${syncConfig.prefix_2 || '[Personal] '}\n`);
 } else {
   console.log('⚠  No sync config found. Configure calendars in the web UI first.\n');
+}
+
+const calendars = getCalendars();
+if (calendars.length > 0) {
+  console.log('--- Configured Calendars ---\n');
+  for (const cal of calendars) {
+    console.log(`  ${cal.calendar_name} (Account ${cal.account_num}, ${cal.sync_mode})`);
+    console.log(`    ID: ${cal.calendar_id}`);
+    console.log(`    Prefix: "${cal.prefix}" Suffix: "${cal.suffix}"\n`);
+  }
 }
 
 console.log('=================================\n');

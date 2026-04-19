@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -111,6 +112,89 @@ export function initDatabase() {
       ALTER TABLE synced_events_new RENAME TO synced_events;
     `);
     console.log('Migrated synced_events for multi-target sync');
+  }
+
+  // --- New: flexible multi-calendar support ---
+
+  // Calendars table: allows unlimited calendars from either account
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS calendars (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_num INTEGER NOT NULL,
+      calendar_id TEXT NOT NULL,
+      calendar_name TEXT,
+      prefix TEXT DEFAULT '',
+      suffix TEXT DEFAULT '',
+      sync_mode TEXT DEFAULT 'bidirectional',
+      enabled INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(calendar_id)
+    );
+  `);
+
+  // Add ics_token column to sync_config if missing
+  if (!configColumns.includes('ics_token')) {
+    db.exec("ALTER TABLE sync_config ADD COLUMN ics_token TEXT");
+  }
+
+  // Ensure sync_config row exists with an ICS token
+  const scRow = db.prepare('SELECT * FROM sync_config WHERE id = 1').get();
+  if (scRow && !scRow.ics_token) {
+    const token = crypto.randomBytes(32).toString('hex');
+    db.prepare('UPDATE sync_config SET ics_token = ? WHERE id = 1').run(token);
+  } else if (!scRow) {
+    const token = crypto.randomBytes(32).toString('hex');
+    db.prepare('INSERT INTO sync_config (id, ics_token) VALUES (1, ?)').run(token);
+  }
+
+  // Migrate old sync_config calendar data → calendars table
+  const calCount = db.prepare('SELECT COUNT(*) as count FROM calendars').get();
+  if (calCount.count === 0) {
+    const oldCfg = db.prepare('SELECT * FROM sync_config WHERE id = 1').get();
+    if (oldCfg?.calendar_id_1) {
+      db.prepare('INSERT OR IGNORE INTO calendars (account_num, calendar_id, calendar_name, prefix, sync_mode) VALUES (?, ?, ?, ?, ?)')
+        .run(1, oldCfg.calendar_id_1, oldCfg.calendar_name_1 || 'Calendar 1', oldCfg.prefix_1 || '[Business] ', 'bidirectional');
+    }
+    if (oldCfg?.calendar_id_2) {
+      db.prepare('INSERT OR IGNORE INTO calendars (account_num, calendar_id, calendar_name, prefix, sync_mode) VALUES (?, ?, ?, ?, ?)')
+        .run(2, oldCfg.calendar_id_2, oldCfg.calendar_name_2 || 'Calendar 2', oldCfg.prefix_2 || '[Personal] ', 'bidirectional');
+    }
+    if (oldCfg?.calendar_id_3) {
+      db.prepare('INSERT OR IGNORE INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(1, oldCfg.calendar_id_3, oldCfg.calendar_name_3 || 'Calendar 3', oldCfg.prefix_1 || '[Business] ', oldCfg.suffix_3 || ' Wedding', 'one-way');
+    }
+    if (calCount.count === 0) console.log('Migrated calendar config to calendars table');
+  }
+
+  // Fix old source_account=3 records (cal3 was always on account 1)
+  db.prepare('UPDATE synced_events SET source_account = 1 WHERE source_account = 3').run();
+
+  // Migrate synced_events unique constraint to use source_calendar_id
+  const seIndexes2 = db.pragma("index_list('synced_events')");
+  const needsCalIdMigration = seIndexes2.some(idx => {
+    if (!idx.unique) return false;
+    const cols = db.pragma(`index_info('${idx.name}')`).map(c => c.name);
+    return cols.includes('source_account') && cols.includes('source_event_id') && cols.includes('target_calendar_id') && !cols.includes('source_calendar_id');
+  });
+  if (needsCalIdMigration) {
+    db.exec(`
+      CREATE TABLE synced_events_v3 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_account INTEGER NOT NULL,
+        source_event_id TEXT NOT NULL,
+        target_event_id TEXT NOT NULL,
+        source_calendar_id TEXT NOT NULL,
+        target_calendar_id TEXT NOT NULL,
+        event_hash TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(source_event_id, source_calendar_id, target_calendar_id)
+      );
+      INSERT OR IGNORE INTO synced_events_v3 SELECT * FROM synced_events;
+      DROP TABLE synced_events;
+      ALTER TABLE synced_events_v3 RENAME TO synced_events;
+    `);
+    console.log('Migrated synced_events unique constraint to source_calendar_id');
   }
 
   console.log('Database initialized');
@@ -283,6 +367,69 @@ export function clearResolvedDuplicates() {
 export function isPendingDuplicate(sourceEventId, sourceAccount) {
   const stmt = db.prepare('SELECT id FROM pending_duplicates WHERE source_event_id = ? AND source_account = ?');
   return !!stmt.get(sourceEventId, sourceAccount);
+}
+
+// --- Calendars management ---
+
+export function getCalendars() {
+  return db.prepare('SELECT * FROM calendars ORDER BY account_num, id').all();
+}
+
+export function getEnabledCalendars() {
+  return db.prepare('SELECT * FROM calendars WHERE enabled = 1 ORDER BY account_num, id').all();
+}
+
+export function getCalendarsByAccount(accountNum) {
+  return db.prepare('SELECT * FROM calendars WHERE account_num = ? ORDER BY id').all(accountNum);
+}
+
+export function getCalendarById(id) {
+  return db.prepare('SELECT * FROM calendars WHERE id = ?').get(id);
+}
+
+export function saveCalendar(cal) {
+  const stmt = db.prepare(`
+    INSERT INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const result = stmt.run(
+    cal.accountNum, cal.calendarId, cal.calendarName || '',
+    cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional',
+    cal.enabled !== false ? 1 : 0
+  );
+  return result.lastInsertRowid;
+}
+
+export function updateCalendar(id, cal) {
+  const stmt = db.prepare(`
+    UPDATE calendars SET calendar_name = ?, prefix = ?, suffix = ?, sync_mode = ?, enabled = ?
+    WHERE id = ?
+  `);
+  stmt.run(cal.calendarName || '', cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional', cal.enabled !== false ? 1 : 0, id);
+}
+
+export function removeCalendar(id) {
+  // Also clean up synced_events referencing this calendar
+  const cal = db.prepare('SELECT * FROM calendars WHERE id = ?').get(id);
+  if (cal) {
+    db.prepare('DELETE FROM synced_events WHERE source_calendar_id = ? OR target_calendar_id = ?').run(cal.calendar_id, cal.calendar_id);
+  }
+  db.prepare('DELETE FROM calendars WHERE id = ?').run(id);
+}
+
+export function getIcsToken() {
+  const config = db.prepare('SELECT ics_token FROM sync_config WHERE id = 1').get();
+  return config?.ics_token;
+}
+
+export function saveSyncEnabled(enabled) {
+  const existing = db.prepare('SELECT id FROM sync_config WHERE id = 1').get();
+  if (existing) {
+    db.prepare('UPDATE sync_config SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run(enabled ? 1 : 0);
+  } else {
+    const token = crypto.randomBytes(32).toString('hex');
+    db.prepare('INSERT INTO sync_config (id, enabled, ics_token, updated_at) VALUES (1, ?, ?, CURRENT_TIMESTAMP)').run(enabled ? 1 : 0, token);
+  }
 }
 
 export default db;

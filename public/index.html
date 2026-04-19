@@ -163,6 +163,11 @@
       cursor: not-allowed;
     }
     
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 0.85rem;
+    }
+    
     .form-group {
       margin-bottom: 20px;
     }
@@ -188,12 +193,6 @@
     .form-group input:focus {
       outline: none;
       border-color: #667eea;
-    }
-    
-    .prefix-group {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 15px;
     }
     
     .status-badge {
@@ -352,95 +351,141 @@
     .duplicate-item:hover {
       border-color: #667eea;
     }
-    
-    .duplicate-header {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 12px;
+
+    /* Calendar list styles */
+    .calendar-list {
+      margin-bottom: 20px;
     }
     
-    .duplicate-header input[type="checkbox"] {
-      margin-top: 4px;
-      width: 18px;
-      height: 18px;
-    }
-    
-    .duplicate-events {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      gap: 15px;
-      align-items: start;
-    }
-    
-    .duplicate-event {
-      background: white;
-      border-radius: 6px;
-      padding: 12px;
+    .calendar-row {
       border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 10px;
+      background: #fafafa;
+      transition: border-color 0.3s;
     }
     
-    .duplicate-event h4 {
-      margin: 0 0 8px 0;
-      font-size: 0.95rem;
-      color: #333;
+    .calendar-row:hover {
+      border-color: #667eea;
     }
     
-    .duplicate-event .meta {
-      font-size: 0.85rem;
-      color: #666;
-    }
-    
-    .duplicate-arrow {
+    .calendar-row-header {
       display: flex;
       align-items: center;
-      font-size: 1.5rem;
-      color: #999;
-      padding-top: 20px;
+      justify-content: space-between;
+      margin-bottom: 10px;
     }
     
-    .duplicate-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-      flex-wrap: wrap;
-    }
-    
-    .duplicate-actions .btn {
-      padding: 6px 12px;
-      font-size: 0.85rem;
-    }
-    
-    .source-label {
-      font-size: 0.75rem;
+    .calendar-row-header .cal-name {
       font-weight: 600;
-      text-transform: uppercase;
+      font-size: 0.95rem;
+    }
+    
+    .calendar-row-header .cal-account {
+      font-size: 0.8rem;
       color: #667eea;
-      margin-bottom: 4px;
+      background: #e8ecff;
+      padding: 2px 8px;
+      border-radius: 10px;
     }
     
-    .existing-label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      color: #e65100;
-      margin-bottom: 4px;
+    .calendar-row-fields {
+      display: grid;
+      grid-template-columns: 1fr 130px 130px 120px;
+      gap: 10px;
+      align-items: end;
     }
     
     @media (max-width: 700px) {
-      .duplicate-events {
+      .calendar-row-fields {
         grid-template-columns: 1fr;
       }
-      .duplicate-arrow {
-        display: none;
-      }
     }
+    
+    .calendar-row-fields label {
+      font-size: 0.8rem;
+      color: #777;
+      margin-bottom: 4px;
+      display: block;
+    }
+    
+    .calendar-row-fields input,
+    .calendar-row-fields select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    
+    .add-calendar-row {
+      display: grid;
+      grid-template-columns: 100px 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-top: 15px;
+      padding: 15px;
+      background: #f0f4ff;
+      border-radius: 8px;
+      border: 2px dashed #667eea;
+    }
+    
+    .add-calendar-row label {
+      font-size: 0.8rem;
+      color: #667eea;
+      margin-bottom: 4px;
+      display: block;
+    }
+    
+    .add-calendar-row select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #667eea;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    
+    .ics-url-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #f5f7fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px 15px;
+      margin-top: 15px;
+    }
+    
+    .ics-url-box input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      font-size: 0.85rem;
+      font-family: monospace;
+      color: #333;
+    }
+    
+    .ics-url-box input:focus {
+      outline: none;
+    }
+    
+    .mode-badge {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .mode-bidir { background: #e3f2fd; color: #1565c0; }
+    .mode-oneway { background: #fff3e0; color: #e65100; }
   </style>
 </head>
 <body>
   <header>
     <h1>📅 Calendar Sync</h1>
-    <p>Two-way sync between your Google Calendars</p>
+    <p>Multi-calendar sync between your Google Calendars</p>
   </header>
   
   <div class="container">
@@ -471,53 +516,36 @@
     
     <!-- Step 2: Configure Calendars -->
     <div id="config-section" class="card hidden">
-      <h2><span class="step">2</span> Configure Sync</h2>
+      <h2><span class="step">2</span> Configure Calendars</h2>
       
-      <div class="form-group">
-        <label for="calendar1">Calendar from Account 1:</label>
-        <select id="calendar1">
-          <option value="">Loading calendars...</option>
-        </select>
+      <p style="color: #666; margin-bottom: 20px;">
+        Add calendars from either account. <strong>Bidirectional</strong> calendars sync with all bidirectional calendars on the other account. 
+        <strong>One-way</strong> calendars push events to all bidirectional calendars.
+      </p>
+      
+      <div id="calendar-list" class="calendar-list">
+        <div class="empty-state">No calendars configured yet</div>
       </div>
       
-      <div class="form-group">
-        <label for="calendar2">Calendar from Account 2:</label>
-        <select id="calendar2">
-          <option value="">Loading calendars...</option>
-        </select>
-      </div>
-      
-      <div class="form-group">
-        <label>Event Title Prefixes (to identify source):</label>
-        <div class="prefix-group">
-          <div>
-            <input type="text" id="prefix1" placeholder="[Business] " value="[Business] ">
-            <small style="color: #999;">Prefix for events from Account 1</small>
-          </div>
-          <div>
-            <input type="text" id="prefix2" placeholder="[Personal] " value="[Personal] ">
-            <small style="color: #999;">Prefix for events from Account 2</small>
-          </div>
+      <!-- Add Calendar -->
+      <div class="add-calendar-row">
+        <div>
+          <label>Account</label>
+          <select id="add-account">
+            <option value="1">Account 1</option>
+            <option value="2">Account 2</option>
+          </select>
+        </div>
+        <div>
+          <label>Calendar</label>
+          <select id="add-calendar">
+            <option value="">Select a calendar...</option>
+          </select>
+        </div>
+        <div>
+          <button id="add-calendar-btn" class="btn btn-primary btn-sm" style="margin-bottom: 0;">+ Add</button>
         </div>
       </div>
-      
-      <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 25px 0;">
-      
-      <div class="form-group">
-        <label for="calendar3">Wedding Calendar from Account 1 (optional, one-way sync):</label>
-        <select id="calendar3">
-          <option value="">None (disabled)</option>
-        </select>
-        <small style="color: #999;">Events from this calendar will be copied to both calendars above</small>
-      </div>
-      
-      <div id="suffix-group" class="form-group" style="display: none;">
-        <label for="suffix3">Suffix for Wedding Calendar events:</label>
-        <input type="text" id="suffix3" placeholder=" Wedding" value=" Wedding">
-        <small style="color: #999;">Appended to event titles when synced (e.g. "Rehearsal" → "Rehearsal Wedding")</small>
-      </div>
-      
-      <button id="save-config" class="btn btn-primary">Save Configuration</button>
     </div>
     
     <!-- Step 3: Sync Status & Controls -->
@@ -537,6 +565,18 @@
       </div>
       
       <div id="sync-result" class="alert alert-info hidden" style="margin-top: 20px;"></div>
+      
+      <!-- ICS Feed -->
+      <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+        <h3 style="font-size: 1rem; color: #667eea; margin-bottom: 10px;">📱 Apple Calendar / ICS Feed</h3>
+        <p style="font-size: 0.9rem; color: #666; margin-bottom: 10px;">
+          Subscribe to this URL in Apple Calendar (or any ICS-compatible app) to see all your events combined and deduplicated in one calendar. Auto-updates on each refresh.
+        </p>
+        <div id="ics-url-container" class="ics-url-box">
+          <input type="text" id="ics-url" readonly value="Loading...">
+          <button class="btn btn-sm btn-outline" onclick="copyIcsUrl()">Copy</button>
+        </div>
+      </div>
     </div>
     
     <!-- Duplicate Scanner -->
@@ -547,7 +587,7 @@
       </h2>
       
       <div class="alert alert-info" style="margin-bottom: 20px;">
-        Scan for duplicate events <strong>within each calendar</strong> (e.g., multiple "[PHOTO] Wedding" on the same date). 
+        Scan for duplicate events <strong>within each calendar</strong>. 
         This helps clean up leftovers from previous sync tools.
       </div>
       
@@ -559,19 +599,7 @@
           <button id="delete-all-btn" class="btn btn-danger" style="margin-left: 15px;" onclick="deleteAllSelected()">Delete All Selected</button>
         </div>
         
-        <div id="duplicates-cal1">
-          <h3 id="cal1-name" style="margin-bottom: 10px;">Calendar 1</h3>
-          <div id="duplicates-list-1" class="duplicates-container">
-            <div class="empty-state">No duplicates found</div>
-          </div>
-        </div>
-        
-        <div id="duplicates-cal2" style="margin-top: 20px;">
-          <h3 id="cal2-name" style="margin-bottom: 10px;">Calendar 2</h3>
-          <div id="duplicates-list-2" class="duplicates-container">
-            <div class="empty-state">No duplicates found</div>
-          </div>
-        </div>
+        <div id="duplicates-list"></div>
       </div>
     </div>
     
@@ -608,6 +636,7 @@
       account2Email: null,
       calendars1: [],
       calendars2: [],
+      configuredCalendars: [],
       syncConfig: null
     };
     
@@ -627,20 +656,20 @@
         state.account2Connected = data.account2Connected;
         state.account1Email = data.account1Email;
         state.account2Email = data.account2Email;
-        state.syncConfig = data.syncConfig;
         
         updateAccountUI(1);
         updateAccountUI(2);
         
         if (state.account1Connected && state.account2Connected) {
           await loadCalendars();
+          await loadSyncConfig();
           document.getElementById('config-section').classList.remove('hidden');
           document.getElementById('sync-section').classList.remove('hidden');
           document.getElementById('duplicates-section').classList.remove('hidden');
           document.getElementById('logs-section').classList.remove('hidden');
           
-          await loadSyncConfig();
           await loadLogs();
+          await loadIcsUrl();
         }
       } catch (error) {
         console.error('Error loading status:', error);
@@ -657,7 +686,7 @@
       if (connected) {
         card.classList.add('connected');
         statusDiv.innerHTML = `
-          <div class="email">${email || 'Connected'}</div>
+          <div class="email">${escapeHtml(email || 'Connected')}</div>
           <span class="status-badge status-enabled">Connected</span>
         `;
       } else {
@@ -680,44 +709,29 @@
         const data1 = await res1.json();
         const data2 = await res2.json();
         
-        // Check for errors
-        if (Array.isArray(data1)) {
-          state.calendars1 = data1;
-          populateCalendarSelect('calendar1', state.calendars1);
-          // Also populate calendar 3 dropdown from account 1's calendars
-          const select3 = document.getElementById('calendar3');
-          select3.innerHTML = '<option value="">None (disabled)</option>';
-          state.calendars1.forEach(cal => {
-            const option = document.createElement('option');
-            option.value = cal.id;
-            option.textContent = cal.summary + (cal.primary ? ' (Primary)' : '');
-            select3.appendChild(option);
-          });
-        } else {
-          console.error('Error loading calendars for account 1:', data1);
-          const select = document.getElementById('calendar1');
-          select.innerHTML = `<option value="">Error: ${data1.details || data1.error}</option>`;
-        }
+        if (Array.isArray(data1)) state.calendars1 = data1;
+        if (Array.isArray(data2)) state.calendars2 = data2;
         
-        if (Array.isArray(data2)) {
-          state.calendars2 = data2;
-          populateCalendarSelect('calendar2', state.calendars2);
-        } else {
-          console.error('Error loading calendars for account 2:', data2);
-          const select = document.getElementById('calendar2');
-          select.innerHTML = `<option value="">Error: ${data2.details || data2.error}</option>`;
-        }
+        // Populate the "add calendar" dropdown based on selected account
+        updateAddCalendarDropdown();
       } catch (error) {
         console.error('Error loading calendars:', error);
       }
     }
     
-    // Populate calendar dropdown
-    function populateCalendarSelect(selectId, calendars) {
-      const select = document.getElementById(selectId);
+    // Update the "add calendar" dropdown based on selected account
+    function updateAddCalendarDropdown() {
+      const accountNum = parseInt(document.getElementById('add-account').value);
+      const calendars = accountNum === 1 ? state.calendars1 : state.calendars2;
+      const select = document.getElementById('add-calendar');
+      
       select.innerHTML = '<option value="">Select a calendar...</option>';
       
+      // Filter out already configured calendars
+      const configuredIds = new Set(state.configuredCalendars.map(c => c.calendar_id));
+      
       calendars.forEach(cal => {
+        if (configuredIds.has(cal.id)) return;
         const option = document.createElement('option');
         option.value = cal.id;
         option.textContent = cal.summary + (cal.primary ? ' (Primary)' : '');
@@ -729,32 +743,195 @@
     async function loadSyncConfig() {
       try {
         const response = await fetch('/api/sync/config');
-        const config = await response.json();
+        const data = await response.json();
         
-        if (config.calendar_id_1) {
-          document.getElementById('calendar1').value = config.calendar_id_1;
-        }
-        if (config.calendar_id_2) {
-          document.getElementById('calendar2').value = config.calendar_id_2;
-        }
-        if (config.prefix_1) {
-          document.getElementById('prefix1').value = config.prefix_1;
-        }
-        if (config.prefix_2) {
-          document.getElementById('prefix2').value = config.prefix_2;
-        }
-        if (config.calendar_id_3) {
-          document.getElementById('calendar3').value = config.calendar_id_3;
-          document.getElementById('suffix-group').style.display = '';
-        }
-        if (config.suffix_3) {
-          document.getElementById('suffix3').value = config.suffix_3;
-        }
-        
-        updateSyncStatus(config.enabled, config.last_sync);
+        state.configuredCalendars = data.calendars || [];
+        updateSyncStatus(data.enabled, data.last_sync);
+        renderCalendarList();
+        updateAddCalendarDropdown();
       } catch (error) {
         console.error('Error loading sync config:', error);
       }
+    }
+    
+    // Render the configured calendar list
+    function renderCalendarList() {
+      const container = document.getElementById('calendar-list');
+      
+      if (state.configuredCalendars.length === 0) {
+        container.innerHTML = '<div class="empty-state">No calendars configured yet. Add calendars below.</div>';
+        return;
+      }
+      
+      container.innerHTML = state.configuredCalendars.map(cal => {
+        const modeBadge = cal.sync_mode === 'one-way' 
+          ? '<span class="mode-badge mode-oneway">One-way</span>'
+          : '<span class="mode-badge mode-bidir">Bidirectional</span>';
+        
+        return `
+          <div class="calendar-row" data-cal-id="${cal.id}">
+            <div class="calendar-row-header">
+              <div>
+                <span class="cal-name">${escapeHtml(cal.calendar_name || cal.calendar_id)}</span>
+                ${modeBadge}
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="cal-account">Account ${cal.account_num}</span>
+                <button class="btn btn-danger btn-sm" onclick="removeCalendar(${cal.id})" title="Remove calendar">✕</button>
+              </div>
+            </div>
+            <div class="calendar-row-fields">
+              <div>
+                <label>Prefix</label>
+                <input type="text" value="${escapeHtml(cal.prefix || '')}" placeholder="e.g. [Work] " 
+                  onchange="updateCalendarField(${cal.id}, 'prefix', this.value)">
+              </div>
+              <div>
+                <label>Suffix</label>
+                <input type="text" value="${escapeHtml(cal.suffix || '')}" placeholder="optional" 
+                  onchange="updateCalendarField(${cal.id}, 'suffix', this.value)">
+              </div>
+              <div>
+                <label>Mode</label>
+                <select onchange="updateCalendarField(${cal.id}, 'syncMode', this.value)">
+                  <option value="bidirectional" ${cal.sync_mode === 'bidirectional' ? 'selected' : ''}>Bidirectional</option>
+                  <option value="one-way" ${cal.sync_mode === 'one-way' ? 'selected' : ''}>One-way</option>
+                </select>
+              </div>
+              <div>
+                <label>&nbsp;</label>
+                <button class="btn btn-sm btn-primary" onclick="saveCalendarSettings(${cal.id})" style="width: 100%;">Save</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    // Add a new calendar
+    async function addCalendar() {
+      const accountNum = parseInt(document.getElementById('add-account').value);
+      const calendarSelect = document.getElementById('add-calendar');
+      const calendarId = calendarSelect.value;
+      const calendarName = calendarSelect.options[calendarSelect.selectedIndex]?.text || '';
+      
+      if (!calendarId) {
+        showResult('Please select a calendar', 'warning');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/sync/calendars', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountNum,
+            calendarId,
+            calendarName,
+            prefix: '',
+            suffix: '',
+            syncMode: 'bidirectional'
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+          showResult(`Error: ${result.error}`, 'warning');
+          return;
+        }
+        
+        showResult('Calendar added!', 'success');
+        await loadSyncConfig();
+      } catch (error) {
+        console.error('Error adding calendar:', error);
+        showResult('Error adding calendar', 'warning');
+      }
+    }
+    
+    // Remove a calendar
+    async function removeCalendar(id) {
+      if (!confirm('Remove this calendar from sync? Synced event records for this calendar will also be removed.')) return;
+      
+      try {
+        const response = await fetch(`/api/sync/calendars/${id}`, { method: 'DELETE' });
+        const result = await response.json();
+        
+        if (result.success) {
+          showResult('Calendar removed', 'success');
+          await loadSyncConfig();
+        } else {
+          showResult(`Error: ${result.error}`, 'warning');
+        }
+      } catch (error) {
+        console.error('Error removing calendar:', error);
+      }
+    }
+    
+    // Update a field on a calendar (stores in-memory, saved on "Save" btn)
+    function updateCalendarField(id, field, value) {
+      const cal = state.configuredCalendars.find(c => c.id === id);
+      if (cal) {
+        if (field === 'syncMode') cal.sync_mode = value;
+        else cal[field] = value;
+      }
+    }
+    
+    // Save calendar settings
+    async function saveCalendarSettings(id) {
+      const cal = state.configuredCalendars.find(c => c.id === id);
+      if (!cal) return;
+      
+      try {
+        const response = await fetch(`/api/sync/calendars/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            calendarName: cal.calendar_name,
+            prefix: cal.prefix,
+            suffix: cal.suffix,
+            syncMode: cal.sync_mode,
+            enabled: true
+          })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+          showResult('Calendar settings saved!', 'success');
+          await loadSyncConfig();
+        }
+      } catch (error) {
+        console.error('Error saving calendar:', error);
+        showResult('Error saving calendar settings', 'warning');
+      }
+    }
+    
+    // Load ICS URL
+    async function loadIcsUrl() {
+      try {
+        const response = await fetch('/api/sync/ics-info');
+        const data = await response.json();
+        
+        if (data.url) {
+          document.getElementById('ics-url').value = data.url;
+        } else {
+          document.getElementById('ics-url').value = 'ICS feed not available';
+        }
+      } catch (error) {
+        console.error('Error loading ICS URL:', error);
+      }
+    }
+    
+    // Copy ICS URL to clipboard
+    function copyIcsUrl() {
+      const input = document.getElementById('ics-url');
+      input.select();
+      navigator.clipboard.writeText(input.value).then(() => {
+        showResult('ICS URL copied to clipboard!', 'success');
+      }).catch(() => {
+        document.execCommand('copy');
+        showResult('ICS URL copied!', 'success');
+      });
     }
     
     // Update sync status UI
@@ -812,8 +989,8 @@
         <div class="log-entry ${log.status}">
           <span class="time">${new Date(log.created_at).toLocaleString()}</span>
           <span class="action">${formatAction(log.action)}</span>
-          ${log.event_title ? `<span>"${log.event_title}"</span>` : ''}
-          ${log.message ? `<br><small style="color: #666;">${log.message}</small>` : ''}
+          ${log.event_title ? `<span>"${escapeHtml(log.event_title)}"</span>` : ''}
+          ${log.message ? `<br><small style="color: #666;">${escapeHtml(log.message)}</small>` : ''}
         </div>
       `).join('');
     }
@@ -844,13 +1021,13 @@
       container.innerHTML = events.slice(0, 50).map(event => `
         <div class="log-entry">
           <span class="time">${new Date(event.created_at).toLocaleString()}</span>
-          <span>Account ${event.source_account} → Account ${event.source_account === 1 ? 2 : 1}</span>
+          <span>Account ${event.source_account} → Target</span>
           <br><small style="color: #666;">Source: ${event.source_event_id.substring(0, 20)}...</small>
         </div>
       `).join('');
     }
     
-    // Scan for duplicates within each calendar
+    // Scan for duplicates
     async function scanDuplicates() {
       const btn = document.getElementById('scan-duplicates');
       btn.disabled = true;
@@ -866,15 +1043,26 @@
         }
         
         document.getElementById('duplicates-results').classList.remove('hidden');
-        document.getElementById('cal1-name').textContent = data.calendar1.name || 'Calendar 1';
-        document.getElementById('cal2-name').textContent = data.calendar2.name || 'Calendar 2';
         
-        renderCalendarDuplicates('duplicates-list-1', data.calendar1.duplicates, 1);
-        renderCalendarDuplicates('duplicates-list-2', data.calendar2.duplicates, 2);
+        const container = document.getElementById('duplicates-list');
+        let totalDups = 0;
         
-        const totalDups = data.calendar1.duplicates.length + data.calendar2.duplicates.length;
+        let html = '';
+        for (const cal of data.calendars) {
+          totalDups += cal.duplicates.length;
+          html += `<h3 style="margin: 15px 0 10px;">${escapeHtml(cal.name)} (Account ${cal.accountNum})</h3>`;
+          
+          if (cal.duplicates.length === 0) {
+            html += '<div class="empty-state">No duplicates found</div>';
+          } else {
+            html += renderDuplicateGroups(cal.duplicates, cal.accountNum, cal.id);
+          }
+        }
+        
+        container.innerHTML = html;
+        
         if (totalDups === 0) {
-          showResult('No duplicates found in either calendar!', 'success');
+          showResult('No duplicates found in any calendar!', 'success');
         } else {
           showResult(`Found ${totalDups} duplicate group(s) - review and delete extras`, 'info');
         }
@@ -887,20 +1075,12 @@
       }
     }
     
-    // Render duplicates for a single calendar
-    function renderCalendarDuplicates(containerId, duplicates, accountNum) {
-      const container = document.getElementById(containerId);
-      
-      if (!duplicates.length) {
-        container.innerHTML = '<div class="empty-state">No duplicates found</div>';
-        return;
-      }
-      
-      container.innerHTML = duplicates.map(dup => {
-        const timeStr = formatEventTime({ start: { dateTime: dup.time, date: dup.time?.includes('T') ? null : dup.time } });
+    // Render duplicate groups
+    function renderDuplicateGroups(duplicates, accountNum, calDbId) {
+      return duplicates.map(dup => {
         let typeLabel;
         if (dup.type === 'corrupted') {
-          typeLabel = '<span style="background: #9c27b0; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">CORRUPTED - DELETE ALL</span>';
+          typeLabel = '<span style="background: #9c27b0; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">CORRUPTED</span>';
         } else if (dup.type === 'exact') {
           typeLabel = '<span style="background: #f44336; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">EXACT</span>';
         } else {
@@ -911,68 +1091,33 @@
         
         return `
           <div class="duplicate-item">
-            <div class="duplicate-header">
-              <div style="flex: 1;">
-                <strong>${escapeHtml(dup.title)}</strong>${typeLabel}
-                <div style="font-size: 0.85rem; color: #666;">
-                  ${timeStr} • ${dup.count} copies found
-                </div>
+            <div style="margin-bottom: 8px;">
+              <strong>${escapeHtml(dup.title)}</strong>${typeLabel}
+              <div style="font-size: 0.85rem; color: #666;">
+                ${escapeHtml(dup.time || '')} &bull; ${dup.count} copies found
               </div>
             </div>
             
-            <div style="margin-top: 12px;">
-              ${dup.events.map((event, idx) => {
-                const isKeep = !isCorrupted && idx === 0;
-                return `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: ${isKeep ? '#e8f5e9' : (isCorrupted ? '#ffebee' : '#fff')}; border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 4px;">
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    ${isKeep ? `
-                      <span style="width: 18px; text-align: center; color: #2e7d32;">✓</span>
-                    ` : `
-                      <input type="checkbox" class="delete-checkbox" data-account="${accountNum}" data-event-id="${event.id}" checked onchange="updateDeleteCount()">
-                    `}
-                    <div>
-                      <span style="font-size: 0.85rem; ${isKeep ? 'color: #2e7d32; font-weight: 500;' : (isCorrupted ? 'color: #c62828;' : '')}">${escapeHtml(event.summary)}</span>
-                      ${isKeep ? '<span style="font-size: 0.75rem; color: #999; margin-left: 8px;">(Keep)</span>' : ''}
-                    </div>
+            ${dup.events.map((event, idx) => {
+              const isKeep = !isCorrupted && idx === 0;
+              return `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: ${isKeep ? '#e8f5e9' : (isCorrupted ? '#ffebee' : '#fff')}; border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 4px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  ${isKeep ? `
+                    <span style="width: 18px; text-align: center; color: #2e7d32;">✓</span>
+                  ` : `
+                    <input type="checkbox" class="delete-checkbox" data-account="${accountNum}" data-event-id="${event.id}" checked onchange="updateDeleteCount()">
+                  `}
+                  <div>
+                    <span style="font-size: 0.85rem; ${isKeep ? 'color: #2e7d32; font-weight: 500;' : (isCorrupted ? 'color: #c62828;' : '')}">${escapeHtml(event.summary || '')}</span>
+                    ${isKeep ? '<span style="font-size: 0.75rem; color: #999; margin-left: 8px;">(Keep)</span>' : ''}
                   </div>
-                  ${!isKeep ? `
-                    <button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.8rem;" onclick="deleteDuplicateEvent(${accountNum}, '${event.id}')">
-                      Delete
-                    </button>
-                  ` : ''}
                 </div>
-              `}).join('')}
-            </div>
+              </div>
+            `}).join('')}
           </div>
         `;
       }).join('');
-      
-      // Update delete count after rendering
-      setTimeout(updateDeleteCount, 0);
-    }
-    
-    // Delete a duplicate event
-    async function deleteDuplicateEvent(accountNum, eventId) {
-      if (!confirm('Delete this event? This cannot be undone.')) return;
-      
-      try {
-        const response = await fetch(`/api/sync/event/${accountNum}/${eventId}`, {
-          method: 'DELETE'
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-          showResult('Event deleted', 'success');
-          await scanDuplicates(); // Re-scan to update the list
-        } else {
-          showResult(`Error: ${result.error}`, 'warning');
-        }
-      } catch (error) {
-        console.error('Error deleting event:', error);
-        showResult('Error deleting event', 'warning');
-      }
     }
     
     // Update the delete count display
@@ -1021,11 +1166,9 @@
         
         if (result.deleted > 0) {
           showResult(`Deleted ${result.deleted} event(s)${result.failed > 0 ? `, ${result.failed} failed` : ''}`, result.failed > 0 ? 'warning' : 'success');
-        } else if (result.failed > 0) {
-          showResult(`Failed to delete ${result.failed} event(s)`, 'warning');
         }
         
-        await scanDuplicates(); // Re-scan to update the list
+        await scanDuplicates();
       } catch (error) {
         console.error('Error batch deleting:', error);
         showResult('Error deleting events', 'warning');
@@ -1033,37 +1176,6 @@
         btn.disabled = false;
         btn.textContent = 'Delete All Selected';
       }
-    }
-    
-    // Format event time for display
-    function formatEventTime(event) {
-      if (!event.start) return 'No time';
-      
-      if (event.start.date) {
-        // All-day event
-        return `All day: ${new Date(event.start.date).toLocaleDateString()}`;
-      }
-      
-      if (event.start.dateTime) {
-        const start = new Date(event.start.dateTime);
-        const end = event.end?.dateTime ? new Date(event.end.dateTime) : null;
-        
-        let str = start.toLocaleString(undefined, { 
-          weekday: 'short', 
-          month: 'short', 
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit'
-        });
-        
-        if (end) {
-          str += ` - ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
-        }
-        
-        return str;
-      }
-      
-      return 'Unknown time';
     }
     
     // Escape HTML to prevent XSS
@@ -1075,9 +1187,6 @@
     
     // Setup event listeners
     function setupEventListeners() {
-      // Save config
-      document.getElementById('save-config').addEventListener('click', saveConfig);
-      
       // Toggle sync
       document.getElementById('toggle-sync').addEventListener('click', toggleSync);
       
@@ -1087,10 +1196,11 @@
       // Scan duplicates
       document.getElementById('scan-duplicates').addEventListener('click', scanDuplicates);
       
-      // Calendar 3 toggle suffix visibility
-      document.getElementById('calendar3').addEventListener('change', (e) => {
-        document.getElementById('suffix-group').style.display = e.target.value ? '' : 'none';
-      });
+      // Add calendar
+      document.getElementById('add-calendar-btn').addEventListener('click', addCalendar);
+      
+      // Account selector changes → refresh calendar dropdown
+      document.getElementById('add-account').addEventListener('change', updateAddCalendarDropdown);
       
       // Tabs
       document.querySelectorAll('.tab').forEach(tab => {
@@ -1102,52 +1212,6 @@
           document.getElementById(`${tab.dataset.tab}-tab`).classList.remove('hidden');
         });
       });
-    }
-    
-    // Save configuration
-    async function saveConfig() {
-      const calendar1 = document.getElementById('calendar1');
-      const calendar2 = document.getElementById('calendar2');
-      const calendar3 = document.getElementById('calendar3');
-      const prefix1 = document.getElementById('prefix1').value;
-      const prefix2 = document.getElementById('prefix2').value;
-      const suffix3 = document.getElementById('suffix3').value;
-      
-      if (!calendar1.value || !calendar2.value) {
-        alert('Please select calendars for both accounts');
-        return;
-      }
-      
-      try {
-        const body = {
-            calendarId1: calendar1.value,
-            calendarId2: calendar2.value,
-            calendarName1: calendar1.options[calendar1.selectedIndex].text,
-            calendarName2: calendar2.options[calendar2.selectedIndex].text,
-            prefix1,
-            prefix2,
-            enabled: false
-        };
-        
-        if (calendar3.value) {
-          body.calendarId3 = calendar3.value;
-          body.calendarName3 = calendar3.options[calendar3.selectedIndex].text;
-          body.suffix3 = suffix3 || ' Wedding';
-        }
-        
-        const response = await fetch('/api/sync/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        
-        if (response.ok) {
-          showResult('Configuration saved! Click "Enable Sync" to start syncing.', 'success');
-        }
-      } catch (error) {
-        console.error('Error saving config:', error);
-        showResult('Error saving configuration', 'warning');
-      }
     }
     
     // Toggle sync
