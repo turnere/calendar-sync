@@ -22,8 +22,9 @@ const requireLogin = (req, res, next) => {
   const password = process.env.BASIC_AUTH_PASSWORD;
   if (!password) return next(); // Skip if no password configured
   
-  // Allow health checks and login page without auth
-  if (req.path === '/health' || req.path === '/login') return next();
+  // Allow health checks, login page, and ICS feed without session auth
+  // (ICS feed uses its own token-based auth)
+  if (req.path === '/health' || req.path === '/login' || req.path === '/api/sync/ics') return next();
   
   if (req.session.authenticated) {
     return next();
