@@ -659,11 +659,47 @@ function escapeICS(str) {
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
+    .replace(/\r\n/g, '\\n')
+    .replace(/\r/g, '\\n')
     .replace(/\n/g, '\\n');
+}
+
+// RFC 5545 requires content lines <= 75 octets. Fold long lines.
+function foldLine(line) {
+  if (Buffer.byteLength(line, 'utf8') <= 75) return line;
+  
+  const result = [];
+  let remaining = line;
+  let first = true;
+  
+  while (Buffer.byteLength(remaining, 'utf8') > 75) {
+    // For the first chunk, max 75 bytes. For continuation lines, 74 (leading space takes 1).
+    const maxBytes = first ? 75 : 74;
+    let cutPoint = 0;
+    let byteCount = 0;
+    
+    for (let i = 0; i < remaining.length; i++) {
+      const charBytes = Buffer.byteLength(remaining[i], 'utf8');
+      if (byteCount + charBytes > maxBytes) break;
+      byteCount += charBytes;
+      cutPoint = i + 1;
+    }
+    
+    result.push(remaining.substring(0, cutPoint));
+    remaining = remaining.substring(cutPoint);
+    first = false;
+  }
+  
+  if (remaining.length > 0) {
+    result.push(remaining);
+  }
+  
+  return result.join('\r\n ');
 }
 
 function formatDateTimeICS(dateTime) {
   const d = new Date(dateTime);
+  if (isNaN(d.getTime())) return null;
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 }
 
@@ -671,14 +707,21 @@ function formatDateICS(date) {
   return date.replace(/-/g, '');
 }
 
+// Generate a stable UID from a Google event ID (some IDs have chars not ideal for UID)
+function makeUID(eventId) {
+  const safe = (eventId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  return `${safe || crypto.randomUUID()}@calendar-sync`;
+}
+
 export function generateICS(events, calendarName) {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Calendar Sync//Combined//EN',
+    'PRODID:-//CalendarSync//Combined//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    `X-WR-CALNAME:${escapeICS(calendarName || 'All Calendars')}`,
+    foldLine(`X-WR-CALNAME:${escapeICS(calendarName || 'All Calendars')}`),
+    'REFRESH-INTERVAL;VALUE=DURATION:PT5M',
     'X-PUBLISHED-TTL:PT5M',
   ];
   
@@ -687,52 +730,63 @@ export function generateICS(events, calendarName) {
   for (const event of events) {
     if (event.status === 'cancelled') continue;
     
-    lines.push('BEGIN:VEVENT');
+    // Must have at least a start time
+    const hasDateTime = event.start?.dateTime;
+    const hasDate = event.start?.date;
+    if (!hasDateTime && !hasDate) continue;
     
-    const uid = event.id || `${Date.now()}-${Math.random()}`;
-    lines.push(`UID:${uid}@calendar-sync`);
-    lines.push(`DTSTAMP:${now}`);
+    const eventLines = [];
+    eventLines.push('BEGIN:VEVENT');
     
-    if (event.start?.dateTime) {
-      lines.push(`DTSTART:${formatDateTimeICS(event.start.dateTime)}`);
-      lines.push(`DTEND:${formatDateTimeICS(event.end?.dateTime || event.start.dateTime)}`);
-    } else if (event.start?.date) {
-      lines.push(`DTSTART;VALUE=DATE:${formatDateICS(event.start.date)}`);
-      lines.push(`DTEND;VALUE=DATE:${formatDateICS(event.end?.date || event.start.date)}`);
+    eventLines.push(foldLine(`UID:${makeUID(event.id)}`));
+    eventLines.push(`DTSTAMP:${now}`);
+    
+    if (hasDateTime) {
+      const dtStart = formatDateTimeICS(event.start.dateTime);
+      const dtEnd = formatDateTimeICS(event.end?.dateTime || event.start.dateTime);
+      if (!dtStart) continue; // Skip events with invalid dates
+      eventLines.push(`DTSTART:${dtStart}`);
+      eventLines.push(`DTEND:${dtEnd || dtStart}`);
+    } else if (hasDate) {
+      eventLines.push(`DTSTART;VALUE=DATE:${formatDateICS(event.start.date)}`);
+      eventLines.push(`DTEND;VALUE=DATE:${formatDateICS(event.end?.date || event.start.date)}`);
     }
     
     if (event.summary) {
-      lines.push(`SUMMARY:${escapeICS(event.summary)}`);
+      eventLines.push(foldLine(`SUMMARY:${escapeICS(event.summary)}`));
+    } else {
+      eventLines.push('SUMMARY:(No title)');
     }
     
     if (event.description) {
       const cleanDesc = event.description.replace(/\n*<!-- CalSync:\d+:[^\s]+ -->/g, '').trim();
       if (cleanDesc) {
-        lines.push(`DESCRIPTION:${escapeICS(cleanDesc)}`);
+        eventLines.push(foldLine(`DESCRIPTION:${escapeICS(cleanDesc)}`));
       }
     }
     
     if (event.location) {
-      lines.push(`LOCATION:${escapeICS(event.location)}`);
+      eventLines.push(foldLine(`LOCATION:${escapeICS(event.location)}`));
     }
     
     if (event.status === 'tentative') {
-      lines.push('STATUS:TENTATIVE');
+      eventLines.push('STATUS:TENTATIVE');
     } else {
-      lines.push('STATUS:CONFIRMED');
+      eventLines.push('STATUS:CONFIRMED');
     }
     
     if (event.transparency === 'transparent') {
-      lines.push('TRANSP:TRANSPARENT');
+      eventLines.push('TRANSP:TRANSPARENT');
     } else {
-      lines.push('TRANSP:OPAQUE');
+      eventLines.push('TRANSP:OPAQUE');
     }
     
-    lines.push('END:VEVENT');
+    eventLines.push('END:VEVENT');
+    lines.push(...eventLines);
   }
   
   lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
+  return lines.join('\r\n') + '\r\n';
 }
 
 // Fetch all events from all calendars, deduplicate, return combined list
@@ -1146,7 +1200,12 @@ syncRouter.get('/ics', async (req, res) => {
   const expectedToken = getIcsToken();
   
   if (!expectedToken || token !== expectedToken) {
-    return res.status(401).json({ error: 'Invalid or missing token' });
+    // Return valid but empty ICS on auth failure (Apple rejects non-ICS responses)
+    res.set({
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': 'inline; filename="combined.ics"'
+    });
+    return res.send('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//CalendarSync//Combined//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Unauthorized\r\nEND:VCALENDAR\r\n');
   }
   
   try {
@@ -1161,7 +1220,12 @@ syncRouter.get('/ics', async (req, res) => {
     res.send(ics);
   } catch (error) {
     console.error('Error generating ICS feed:', error);
-    res.status(500).json({ error: 'Failed to generate calendar feed', details: error.message });
+    // Still return valid ICS so Apple Calendar doesn't reject the subscription
+    res.set({
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': 'inline; filename="combined.ics"'
+    });
+    res.send('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//CalendarSync//Combined//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:All Calendars\r\nEND:VCALENDAR\r\n');
   }
 });
 
