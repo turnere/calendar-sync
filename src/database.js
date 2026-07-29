@@ -132,6 +132,13 @@ export function initDatabase() {
     );
   `);
 
+  // Add color column to calendars if missing (Google Calendar colorId, applied to synced copies)
+  const calColumns = db.pragma("table_info('calendars')").map(c => c.name);
+  if (!calColumns.includes('color')) {
+    db.exec("ALTER TABLE calendars ADD COLUMN color TEXT DEFAULT ''");
+    console.log('Added color column to calendars');
+  }
+
   // Add ics_token column to sync_config if missing
   if (!configColumns.includes('ics_token')) {
     db.exec("ALTER TABLE sync_config ADD COLUMN ics_token TEXT");
@@ -389,23 +396,23 @@ export function getCalendarById(id) {
 
 export function saveCalendar(cal) {
   const stmt = db.prepare(`
-    INSERT INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode, enabled, color)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     cal.accountNum, cal.calendarId, cal.calendarName || '',
     cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional',
-    cal.enabled !== false ? 1 : 0
+    cal.enabled !== false ? 1 : 0, cal.color || ''
   );
   return result.lastInsertRowid;
 }
 
 export function updateCalendar(id, cal) {
   const stmt = db.prepare(`
-    UPDATE calendars SET calendar_name = ?, prefix = ?, suffix = ?, sync_mode = ?, enabled = ?
+    UPDATE calendars SET calendar_name = ?, prefix = ?, suffix = ?, sync_mode = ?, enabled = ?, color = ?
     WHERE id = ?
   `);
-  stmt.run(cal.calendarName || '', cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional', cal.enabled !== false ? 1 : 0, id);
+  stmt.run(cal.calendarName || '', cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional', cal.enabled !== false ? 1 : 0, cal.color || '', id);
 }
 
 export function removeCalendar(id) {

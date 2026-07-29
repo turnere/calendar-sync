@@ -333,7 +333,12 @@ function prepareEventForSync(sourceEvent, sourceCal, allCalendars) {
     transparency: sourceEvent.transparency || 'opaque',
     visibility: 'default'
   };
-  
+
+  // Tag the synced copy with the source calendar's color so its origin is visible at a glance
+  if (sourceCal.color) {
+    syncedEvent.colorId = sourceCal.color;
+  }
+
   // Handle all-day events
   if (sourceEvent.start?.date) {
     syncedEvent.start = { date: sourceEvent.start.date };
@@ -868,14 +873,14 @@ syncRouter.get('/calendars', (req, res) => {
 });
 
 syncRouter.post('/calendars', (req, res) => {
-  const { accountNum, calendarId, calendarName, prefix, suffix, syncMode } = req.body;
-  
+  const { accountNum, calendarId, calendarName, prefix, suffix, syncMode, color } = req.body;
+
   if (!accountNum || !calendarId) {
     return res.status(400).json({ error: 'accountNum and calendarId are required' });
   }
-  
+
   try {
-    const id = saveCalendar({ accountNum, calendarId, calendarName, prefix, suffix, syncMode });
+    const id = saveCalendar({ accountNum, calendarId, calendarName, prefix, suffix, syncMode, color });
     res.json({ success: true, id });
   } catch (err) {
     if (err.message?.includes('UNIQUE constraint')) {
@@ -887,14 +892,14 @@ syncRouter.post('/calendars', (req, res) => {
 
 syncRouter.put('/calendars/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const { calendarName, prefix, suffix, syncMode, enabled } = req.body;
-  
+  const { calendarName, prefix, suffix, syncMode, enabled, color } = req.body;
+
   const existing = getCalendarById(id);
   if (!existing) {
     return res.status(404).json({ error: 'Calendar not found' });
   }
-  
-  updateCalendar(id, { calendarName, prefix, suffix, syncMode, enabled });
+
+  updateCalendar(id, { calendarName, prefix, suffix, syncMode, enabled, color });
   res.json({ success: true });
 });
 

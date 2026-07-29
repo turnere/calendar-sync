@@ -392,7 +392,7 @@
     
     .calendar-row-fields {
       display: grid;
-      grid-template-columns: 1fr 130px 130px 120px;
+      grid-template-columns: 1fr 130px 130px 150px 120px;
       gap: 10px;
       align-items: end;
     }
@@ -628,6 +628,21 @@
   </div>
   
   <script>
+    // Google Calendar event colorId -> name/hex (matches Google's own event color picker)
+    const EVENT_COLORS = {
+      '1': { name: 'Lavender', hex: '#7986cb' },
+      '2': { name: 'Sage', hex: '#33b679' },
+      '3': { name: 'Grape', hex: '#8e24aa' },
+      '4': { name: 'Flamingo', hex: '#e67c73' },
+      '5': { name: 'Banana', hex: '#f6bf26' },
+      '6': { name: 'Tangerine', hex: '#f4511e' },
+      '7': { name: 'Peacock', hex: '#039be5' },
+      '8': { name: 'Graphite', hex: '#616161' },
+      '9': { name: 'Blueberry', hex: '#3f51b5' },
+      '10': { name: 'Basil', hex: '#0b8043' },
+      '11': { name: 'Tomato', hex: '#d50000' }
+    };
+
     // State
     let state = {
       account1Connected: false,
@@ -799,6 +814,15 @@
                 </select>
               </div>
               <div>
+                <label>Color (on synced copies)</label>
+                <select onchange="updateCalendarField(${cal.id}, 'color', this.value)" style="background: ${EVENT_COLORS[cal.color]?.hex ? EVENT_COLORS[cal.color].hex + '22' : ''};">
+                  <option value="">Default (no color)</option>
+                  ${Object.entries(EVENT_COLORS).map(([id, c]) =>
+                    `<option value="${id}" ${cal.color === id ? 'selected' : ''}>${c.name}</option>`
+                  ).join('')}
+                </select>
+              </div>
+              <div>
                 <label>&nbsp;</label>
                 <button class="btn btn-sm btn-primary" onclick="saveCalendarSettings(${cal.id})" style="width: 100%;">Save</button>
               </div>
@@ -891,6 +915,7 @@
             prefix: cal.prefix,
             suffix: cal.suffix,
             syncMode: cal.sync_mode,
+            color: cal.color,
             enabled: true
           })
         });
