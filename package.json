@@ -11,10 +11,11 @@
     "export-config": "node src/export-config.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "googleapis": "^130.0.0",
-    "express-session": "^1.17.3",
+    "@anthropic-ai/sdk": "^0.115.0",
     "better-sqlite3": "^9.4.3",
-    "dotenv": "^16.4.1"
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "googleapis": "^130.0.0"
   }
 }

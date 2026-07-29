@@ -32,13 +32,14 @@ import {
   getIcsToken,
   saveSyncEnabled
 } from './database.js';
-import { 
-  getEventsForSync, 
-  createEvent, 
-  updateEvent, 
+import {
+  getEventsForSync,
+  createEvent,
+  updateEvent,
   deleteEvent,
-  getEvent 
+  getEvent
 } from './calendar.js';
+import { findAiDuplicateMatch } from './duplicate-ai.js';
 
 export const syncRouter = express.Router();
 
@@ -319,6 +320,43 @@ function levenshteinSimilarity(str1, str2) {
   return 1 - (distance / maxLen);
 }
 
+// Get non-cancelled events from `otherEvents` that fall on the same calendar day as `event`
+function getSameDayEvents(event, otherEvents) {
+  const startDate = (event.start?.dateTime || event.start?.date || '').split('T')[0];
+  if (!startDate) return [];
+  return otherEvents.filter(e => {
+    if (e.status === 'cancelled') return false;
+    const eDate = (e.start?.dateTime || e.start?.date || '').split('T')[0];
+    return eDate === startDate;
+  });
+}
+
+// Before creating a new synced copy, ask Claude whether it's really a fuzzy duplicate
+// of something already on the target calendar that day. If so, file it for user review
+// (via the existing pending_duplicates flow) instead of creating a redundant copy.
+// Returns true if the event was flagged and the caller should skip creating it.
+async function maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results) {
+  if (isPendingDuplicate(sourceEvent.id, sourceAccount)) {
+    results.duplicatesFound++;
+    return true;
+  }
+
+  const candidates = getSameDayEvents(sourceEvent, targetEvents);
+  if (candidates.length === 0) return false;
+
+  const match = await findAiDuplicateMatch(sourceEvent, candidates);
+  if (!match) return false;
+
+  const matchedEvent = candidates.find(e => e.id === match.matched_event_id);
+  if (!matchedEvent) return false;
+
+  savePendingDuplicate(sourceAccount, sourceEvent.id, sourceEvent, matchedEvent.id, matchedEvent);
+  results.duplicatesFound++;
+  addSyncLog('ai_duplicate_flagged', sourceAccount, sourceEvent.summary, 'info',
+    `AI flagged possible duplicate of "${matchedEvent.summary}" (confidence ${match.confidence}): ${match.reason}`);
+  return true;
+}
+
 // Prepare event for syncing to target calendar
 function prepareEventForSync(sourceEvent, sourceCal, allCalendars) {
   const originalTitle = getOriginalTitle(sourceEvent.summary || 'No Title', allCalendars);
@@ -540,11 +578,16 @@ async function syncEvents(sourceEvents, targetEvents, sourceAuth, targetAuth, so
         saveSyncedEvent(sourceAccount, sourceEvent.id, existingDup.id,
           sourceCal.calendar_id, targetCal.calendar_id, eventHash);
         results.skipped++;
-        addSyncLog('auto_linked', sourceAccount, sourceEvent.summary, 'success', 
+        addSyncLog('auto_linked', sourceAccount, sourceEvent.summary, 'success',
           `Linked to existing "${existingDup.summary}"`);
         continue;
       }
-      
+
+      // AI-assisted fuzzy duplicate check (catches same event under different wording)
+      if (await maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results)) {
+        continue;
+      }
+
       // Create new event in target calendar
       try {
         const newEvent = prepareEventForSync(sourceEvent, sourceCal, allCalendars);
@@ -633,7 +676,12 @@ async function syncOneWayEvents(sourceEvents, targetEvents, targetAuth, sourceCa
           `Linked to existing "${existingDup.summary}"`);
         continue;
       }
-      
+
+      // AI-assisted fuzzy duplicate check (catches same event under different wording)
+      if (await maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results)) {
+        continue;
+      }
+
       // Create new event in target
       try {
         const newEvent = prepareEventForSync(sourceEvent, sourceCal, allCalendars);
