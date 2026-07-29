@@ -139,6 +139,13 @@ export function initDatabase() {
     console.log('Added color column to calendars');
   }
 
+  // Add source_type/ics_url columns for external (non-Google) calendars like RVezy/RVshare/Outdoorsy
+  if (!calColumns.includes('source_type')) {
+    db.exec("ALTER TABLE calendars ADD COLUMN source_type TEXT DEFAULT 'google'");
+    db.exec("ALTER TABLE calendars ADD COLUMN ics_url TEXT");
+    console.log('Added source_type/ics_url columns to calendars');
+  }
+
   // Add ics_token column to sync_config if missing
   if (!configColumns.includes('ics_token')) {
     db.exec("ALTER TABLE sync_config ADD COLUMN ics_token TEXT");
@@ -396,13 +403,14 @@ export function getCalendarById(id) {
 
 export function saveCalendar(cal) {
   const stmt = db.prepare(`
-    INSERT INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode, enabled, color)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode, enabled, color, source_type, ics_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     cal.accountNum, cal.calendarId, cal.calendarName || '',
     cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional',
-    cal.enabled !== false ? 1 : 0, cal.color || ''
+    cal.enabled !== false ? 1 : 0, cal.color || '',
+    cal.sourceType || 'google', cal.icsUrl || null
   );
   return result.lastInsertRowid;
 }

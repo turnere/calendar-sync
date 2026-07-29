@@ -438,12 +438,14 @@
       display: block;
     }
     
-    .add-calendar-row select {
+    .add-calendar-row select,
+    .add-calendar-row input {
       width: 100%;
       padding: 8px 10px;
       border: 1px solid #667eea;
       border-radius: 4px;
       font-size: 0.9rem;
+      box-sizing: border-box;
     }
     
     .ics-url-box {
@@ -544,6 +546,32 @@
         </div>
         <div>
           <button id="add-calendar-btn" class="btn btn-primary btn-sm" style="margin-bottom: 0;">+ Add</button>
+        </div>
+      </div>
+
+      <!-- Add External Booking Calendar (ICS URL) -->
+      <p style="color: #666; margin: 20px 0 8px; font-size: 0.9rem;">
+        Or add an external booking calendar (RVezy, RVshare, Outdoorsy, etc.) by pasting its ICS export link. These are always one-way and read-only — their bookings flow into your bidirectional calendars but nothing syncs back to them.
+      </p>
+      <div class="add-calendar-row" style="grid-template-columns: 130px 1fr 110px 150px auto;">
+        <div>
+          <label>Name</label>
+          <input type="text" id="add-ics-name" placeholder="e.g. RVezy">
+        </div>
+        <div>
+          <label>ICS URL</label>
+          <input type="text" id="add-ics-url" placeholder="https://.../calendar.ics">
+        </div>
+        <div>
+          <label>Prefix</label>
+          <input type="text" id="add-ics-prefix" placeholder="optional">
+        </div>
+        <div>
+          <label>Color</label>
+          <select id="add-ics-color"></select>
+        </div>
+        <div>
+          <button id="add-ics-btn" class="btn btn-primary btn-sm" style="margin-bottom: 0;">+ Add</button>
         </div>
       </div>
     </div>
@@ -779,10 +807,23 @@
       }
       
       container.innerHTML = state.configuredCalendars.map(cal => {
-        const modeBadge = cal.sync_mode === 'one-way' 
-          ? '<span class="mode-badge mode-oneway">One-way</span>'
-          : '<span class="mode-badge mode-bidir">Bidirectional</span>';
-        
+        const isIcs = cal.source_type === 'ics';
+        const modeBadge = isIcs
+          ? '<span class="mode-badge mode-oneway">One-way (external)</span>'
+          : cal.sync_mode === 'one-way'
+            ? '<span class="mode-badge mode-oneway">One-way</span>'
+            : '<span class="mode-badge mode-bidir">Bidirectional</span>';
+
+        const modeField = isIcs
+          ? `<div><label>Mode</label><input type="text" value="One-way (fixed)" disabled></div>`
+          : `<div>
+              <label>Mode</label>
+              <select onchange="updateCalendarField(${cal.id}, 'syncMode', this.value)">
+                <option value="bidirectional" ${cal.sync_mode === 'bidirectional' ? 'selected' : ''}>Bidirectional</option>
+                <option value="one-way" ${cal.sync_mode === 'one-way' ? 'selected' : ''}>One-way</option>
+              </select>
+            </div>`;
+
         return `
           <div class="calendar-row" data-cal-id="${cal.id}">
             <div class="calendar-row-header">
@@ -791,28 +832,22 @@
                 ${modeBadge}
               </div>
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="cal-account">Account ${cal.account_num}</span>
+                <span class="cal-account">${isIcs ? 'External (ICS)' : `Account ${cal.account_num}`}</span>
                 <button class="btn btn-danger btn-sm" onclick="removeCalendar(${cal.id})" title="Remove calendar">✕</button>
               </div>
             </div>
             <div class="calendar-row-fields">
               <div>
                 <label>Prefix</label>
-                <input type="text" value="${escapeHtml(cal.prefix || '')}" placeholder="e.g. [Work] " 
+                <input type="text" value="${escapeHtml(cal.prefix || '')}" placeholder="e.g. [Work] "
                   onchange="updateCalendarField(${cal.id}, 'prefix', this.value)">
               </div>
               <div>
                 <label>Suffix</label>
-                <input type="text" value="${escapeHtml(cal.suffix || '')}" placeholder="optional" 
+                <input type="text" value="${escapeHtml(cal.suffix || '')}" placeholder="optional"
                   onchange="updateCalendarField(${cal.id}, 'suffix', this.value)">
               </div>
-              <div>
-                <label>Mode</label>
-                <select onchange="updateCalendarField(${cal.id}, 'syncMode', this.value)">
-                  <option value="bidirectional" ${cal.sync_mode === 'bidirectional' ? 'selected' : ''}>Bidirectional</option>
-                  <option value="one-way" ${cal.sync_mode === 'one-way' ? 'selected' : ''}>One-way</option>
-                </select>
-              </div>
+              ${modeField}
               <div>
                 <label>Color (on synced copies)</label>
                 <select onchange="updateCalendarField(${cal.id}, 'color', this.value)" style="background: ${EVENT_COLORS[cal.color]?.hex ? EVENT_COLORS[cal.color].hex + '22' : ''};">
@@ -832,6 +867,63 @@
       }).join('');
     }
     
+    // Populate the color dropdown for the "add external calendar" form
+    function populateIcsColorSelect() {
+      const select = document.getElementById('add-ics-color');
+      if (!select) return;
+      select.innerHTML = '<option value="">Default (no color)</option>' +
+        Object.entries(EVENT_COLORS).map(([id, c]) => `<option value="${id}">${c.name}</option>`).join('');
+    }
+
+    // Add an external booking calendar from an ICS URL (RVezy, RVshare, Outdoorsy, etc.)
+    async function addIcsCalendar() {
+      const nameInput = document.getElementById('add-ics-name');
+      const urlInput = document.getElementById('add-ics-url');
+      const prefixInput = document.getElementById('add-ics-prefix');
+      const colorSelect = document.getElementById('add-ics-color');
+
+      const calendarName = nameInput.value.trim();
+      const icsUrl = urlInput.value.trim();
+
+      if (!calendarName || !icsUrl) {
+        showResult('Name and ICS URL are required', 'warning');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/sync/calendars', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceType: 'ics',
+            icsUrl,
+            calendarName,
+            prefix: prefixInput.value,
+            color: colorSelect.value,
+            syncMode: 'one-way'
+          })
+        });
+
+        const result = await response.json();
+
+        if (result.error) {
+          showResult(`Error: ${result.error}`, 'warning');
+          return;
+        }
+
+        nameInput.value = '';
+        urlInput.value = '';
+        prefixInput.value = '';
+        colorSelect.value = '';
+
+        showResult('External calendar added!', 'success');
+        await loadSyncConfig();
+      } catch (error) {
+        console.error('Error adding external calendar:', error);
+        showResult('Error adding external calendar', 'warning');
+      }
+    }
+
     // Add a new calendar
     async function addCalendar() {
       const accountNum = parseInt(document.getElementById('add-account').value);
@@ -1223,9 +1315,13 @@
       
       // Add calendar
       document.getElementById('add-calendar-btn').addEventListener('click', addCalendar);
-      
+
       // Account selector changes → refresh calendar dropdown
       document.getElementById('add-account').addEventListener('change', updateAddCalendarDropdown);
+
+      // Add external (ICS) calendar
+      populateIcsColorSelect();
+      document.getElementById('add-ics-btn').addEventListener('click', addIcsCalendar);
       
       // Tabs
       document.querySelectorAll('.tab').forEach(tab => {

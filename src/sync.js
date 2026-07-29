@@ -40,6 +40,7 @@ import {
   getEvent
 } from './calendar.js';
 import { findAiDuplicateMatch } from './duplicate-ai.js';
+import { getEventsFromIcsUrl } from './ics-source.js';
 
 export const syncRouter = express.Router();
 
@@ -401,8 +402,8 @@ async function performSync() {
     return { success: false, message: 'Need at least 2 calendars configured' };
   }
   
-  // Verify both accounts are connected
-  const accountNums = [...new Set(allCalendars.map(c => c.account_num))];
+  // Verify both accounts are connected (external ICS sources don't have a Google account)
+  const accountNums = [...new Set(allCalendars.filter(c => c.source_type !== 'ics').map(c => c.account_num))];
   const auths = {};
   for (const acct of accountNums) {
     const auth = getStoredAuthClient(acct);
@@ -427,10 +428,21 @@ async function performSync() {
     // Fetch events from all calendars
     const calEvents = {};
     for (const cal of allCalendars) {
-      console.log(`Fetching events from "${cal.calendar_name}" (account ${cal.account_num})...`);
-      const { events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id);
-      calEvents[cal.id] = events;
-      console.log(`  Found ${events.length} events`);
+      if (cal.source_type === 'ics') {
+        console.log(`Fetching events from external ICS "${cal.calendar_name}"...`);
+        try {
+          calEvents[cal.id] = await getEventsFromIcsUrl(cal.ics_url);
+        } catch (err) {
+          console.error(`Failed to fetch ICS feed for "${cal.calendar_name}":`, err.message);
+          addSyncLog('ics_fetch_error', null, cal.calendar_name, 'error', err.message);
+          calEvents[cal.id] = [];
+        }
+      } else {
+        console.log(`Fetching events from "${cal.calendar_name}" (account ${cal.account_num})...`);
+        const { events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id);
+        calEvents[cal.id] = events;
+      }
+      console.log(`  Found ${calEvents[cal.id].length} events`);
     }
     
     const biDirCals = allCalendars.filter(c => c.sync_mode === 'bidirectional');
@@ -847,17 +859,27 @@ export async function getCombinedEvents() {
   const allCalendars = getEnabledCalendars();
   if (allCalendars.length === 0) return { events: [], calendars: allCalendars };
   
-  const accountNums = [...new Set(allCalendars.map(c => c.account_num))];
+  const accountNums = [...new Set(allCalendars.filter(c => c.source_type !== 'ics').map(c => c.account_num))];
   const auths = {};
   for (const acct of accountNums) {
     auths[acct] = getStoredAuthClient(acct);
     if (!auths[acct]) throw new Error(`Account ${acct} not connected`);
   }
-  
+
   // Fetch all events
   const allEvents = [];
   for (const cal of allCalendars) {
-    const { events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id);
+    let events;
+    if (cal.source_type === 'ics') {
+      try {
+        events = await getEventsFromIcsUrl(cal.ics_url);
+      } catch (err) {
+        console.error(`Failed to fetch ICS feed for "${cal.calendar_name}":`, err.message);
+        events = [];
+      }
+    } else {
+      ({ events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id));
+    }
     for (const event of events) {
       if (event.status === 'cancelled') continue;
       event._calendarName = cal.calendar_name;
@@ -921,7 +943,32 @@ syncRouter.get('/calendars', (req, res) => {
 });
 
 syncRouter.post('/calendars', (req, res) => {
-  const { accountNum, calendarId, calendarName, prefix, suffix, syncMode, color } = req.body;
+  const { accountNum, calendarId, calendarName, prefix, suffix, syncMode, color, sourceType, icsUrl } = req.body;
+
+  if (sourceType === 'ics') {
+    if (!icsUrl || !calendarName) {
+      return res.status(400).json({ error: 'calendarName and icsUrl are required for an external calendar' });
+    }
+    try {
+      const id = saveCalendar({
+        accountNum: 0,
+        calendarId: icsUrl,
+        calendarName,
+        prefix,
+        suffix,
+        syncMode: 'one-way',
+        color,
+        sourceType: 'ics',
+        icsUrl
+      });
+      return res.json({ success: true, id });
+    } catch (err) {
+      if (err.message?.includes('UNIQUE constraint')) {
+        return res.status(409).json({ error: 'That ICS URL has already been added' });
+      }
+      return res.status(500).json({ error: err.message });
+    }
+  }
 
   if (!accountNum || !calendarId) {
     return res.status(400).json({ error: 'accountNum and calendarId are required' });
