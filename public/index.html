@@ -862,6 +862,14 @@
                 <button class="btn btn-sm btn-primary" onclick="saveCalendarSettings(${cal.id})" style="width: 100%;">Save</button>
               </div>
             </div>
+            <div style="margin-top: 10px;">
+              <label style="font-size: 0.8rem; color: #777; margin-bottom: 4px; display: block;">
+                Exclude events containing (comma-separated, case-insensitive)
+              </label>
+              <input type="text" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;"
+                value="${escapeHtml(cal.exclude_keywords || '')}" placeholder="e.g. RVshare custom event, prep time"
+                onchange="updateCalendarField(${cal.id}, 'excludeKeywords', this.value)">
+            </div>
           </div>
         `;
       }).join('');
@@ -989,6 +997,7 @@
       const cal = state.configuredCalendars.find(c => c.id === id);
       if (cal) {
         if (field === 'syncMode') cal.sync_mode = value;
+        else if (field === 'excludeKeywords') cal.exclude_keywords = value;
         else cal[field] = value;
       }
     }
@@ -1008,6 +1017,7 @@
             suffix: cal.suffix,
             syncMode: cal.sync_mode,
             color: cal.color,
+            excludeKeywords: cal.exclude_keywords,
             enabled: true
           })
         });

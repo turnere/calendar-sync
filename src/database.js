@@ -146,6 +146,12 @@ export function initDatabase() {
     console.log('Added source_type/ics_url columns to calendars');
   }
 
+  // Add exclude_keywords column: comma-separated substrings to filter out matching events
+  if (!calColumns.includes('exclude_keywords')) {
+    db.exec("ALTER TABLE calendars ADD COLUMN exclude_keywords TEXT DEFAULT ''");
+    console.log('Added exclude_keywords column to calendars');
+  }
+
   // Add ics_token column to sync_config if missing
   if (!configColumns.includes('ics_token')) {
     db.exec("ALTER TABLE sync_config ADD COLUMN ics_token TEXT");
@@ -403,24 +409,24 @@ export function getCalendarById(id) {
 
 export function saveCalendar(cal) {
   const stmt = db.prepare(`
-    INSERT INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode, enabled, color, source_type, ics_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calendars (account_num, calendar_id, calendar_name, prefix, suffix, sync_mode, enabled, color, source_type, ics_url, exclude_keywords)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     cal.accountNum, cal.calendarId, cal.calendarName || '',
     cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional',
     cal.enabled !== false ? 1 : 0, cal.color || '',
-    cal.sourceType || 'google', cal.icsUrl || null
+    cal.sourceType || 'google', cal.icsUrl || null, cal.excludeKeywords || ''
   );
   return result.lastInsertRowid;
 }
 
 export function updateCalendar(id, cal) {
   const stmt = db.prepare(`
-    UPDATE calendars SET calendar_name = ?, prefix = ?, suffix = ?, sync_mode = ?, enabled = ?, color = ?
+    UPDATE calendars SET calendar_name = ?, prefix = ?, suffix = ?, sync_mode = ?, enabled = ?, color = ?, exclude_keywords = ?
     WHERE id = ?
   `);
-  stmt.run(cal.calendarName || '', cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional', cal.enabled !== false ? 1 : 0, cal.color || '', id);
+  stmt.run(cal.calendarName || '', cal.prefix || '', cal.suffix || '', cal.syncMode || 'bidirectional', cal.enabled !== false ? 1 : 0, cal.color || '', cal.excludeKeywords || '', id);
 }
 
 export function removeCalendar(id) {

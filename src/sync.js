@@ -119,6 +119,19 @@ function stripAllSuffixes(title, allSuffixes) {
   return result.trim();
 }
 
+// Filter out events whose title/description match any of a calendar's exclude-keyword
+// substrings (comma-separated, case-insensitive) — e.g. "RVshare custom event, prep time"
+function filterExcludedEvents(events, excludeKeywords) {
+  if (!excludeKeywords) return events;
+  const terms = excludeKeywords.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+  if (terms.length === 0) return events;
+
+  return events.filter(event => {
+    const haystack = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
+    return !terms.some(term => haystack.includes(term));
+  });
+}
+
 // Get all known prefixes/suffixes from calendar configurations
 function getAllAffixes(calendars) {
   const prefixes = calendars.map(c => c.prefix).filter(p => p && p.trim());
@@ -442,6 +455,7 @@ async function performSync() {
         const { events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id);
         calEvents[cal.id] = events;
       }
+      calEvents[cal.id] = filterExcludedEvents(calEvents[cal.id], cal.exclude_keywords);
       console.log(`  Found ${calEvents[cal.id].length} events`);
     }
     
@@ -880,6 +894,7 @@ export async function getCombinedEvents() {
     } else {
       ({ events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id));
     }
+    events = filterExcludedEvents(events, cal.exclude_keywords);
     for (const event of events) {
       if (event.status === 'cancelled') continue;
       event._calendarName = cal.calendar_name;
@@ -943,7 +958,7 @@ syncRouter.get('/calendars', (req, res) => {
 });
 
 syncRouter.post('/calendars', (req, res) => {
-  const { accountNum, calendarId, calendarName, prefix, suffix, syncMode, color, sourceType, icsUrl } = req.body;
+  const { accountNum, calendarId, calendarName, prefix, suffix, syncMode, color, sourceType, icsUrl, excludeKeywords } = req.body;
 
   if (sourceType === 'ics') {
     if (!icsUrl || !calendarName) {
@@ -959,7 +974,8 @@ syncRouter.post('/calendars', (req, res) => {
         syncMode: 'one-way',
         color,
         sourceType: 'ics',
-        icsUrl
+        icsUrl,
+        excludeKeywords
       });
       return res.json({ success: true, id });
     } catch (err) {
@@ -975,7 +991,7 @@ syncRouter.post('/calendars', (req, res) => {
   }
 
   try {
-    const id = saveCalendar({ accountNum, calendarId, calendarName, prefix, suffix, syncMode, color });
+    const id = saveCalendar({ accountNum, calendarId, calendarName, prefix, suffix, syncMode, color, excludeKeywords });
     res.json({ success: true, id });
   } catch (err) {
     if (err.message?.includes('UNIQUE constraint')) {
@@ -987,14 +1003,14 @@ syncRouter.post('/calendars', (req, res) => {
 
 syncRouter.put('/calendars/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const { calendarName, prefix, suffix, syncMode, enabled, color } = req.body;
+  const { calendarName, prefix, suffix, syncMode, enabled, color, excludeKeywords } = req.body;
 
   const existing = getCalendarById(id);
   if (!existing) {
     return res.status(404).json({ error: 'Calendar not found' });
   }
 
-  updateCalendar(id, { calendarName, prefix, suffix, syncMode, enabled, color });
+  updateCalendar(id, { calendarName, prefix, suffix, syncMode, enabled, color, excludeKeywords });
   res.json({ success: true });
 });
 
