@@ -115,6 +115,18 @@ export async function notifyAccountReconnected(accountNum) {
   await resolveTodo(`account-${accountNum}-disconnected`);
 }
 
+export async function notifyAuditIssues(summary) {
+  await upsertTodo(
+    'audit-issues',
+    '🔍 Calendar Sync audit found missing events',
+    `${summary}\n\nFull report: ${process.env.BASE_URL || 'https://calendar-sync-ljbw-w.fly.dev'}/api/audit`
+  );
+}
+
+export async function notifyAuditClean() {
+  await resolveTodo('audit-issues');
+}
+
 export function isConfigured() {
   return !!(process.env.HABITICA_USER_ID && process.env.HABITICA_API_TOKEN);
 }

@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import { authRouter, getAuthClient } from './auth.js';
 import { calendarRouter } from './calendar.js';
 import { syncRouter, startSyncScheduler } from './sync.js';
+import { auditRouter, startAuditScheduler } from './audit.js';
 import { initDatabase, getAccountInfo, getTokens, getSyncConfig } from './database.js';
 import { isConfigured as isHabiticaConfigured } from './notify.js';
 
@@ -156,6 +157,7 @@ app.get('/health', (req, res) => {
 app.use('/auth', authRouter);
 app.use('/api/calendars', calendarRouter);
 app.use('/api/sync', syncRouter);
+app.use('/api/audit', auditRouter);
 
 // Status endpoint
 app.get('/api/status', (req, res) => {
@@ -181,4 +183,5 @@ app.listen(PORT, () => {
   
   // Start sync scheduler
   startSyncScheduler();
+  startAuditScheduler();
 });

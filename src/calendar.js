@@ -110,11 +110,19 @@ export async function getEventsForSync(auth, calendarId, syncToken = null) {
     params.orderBy = 'startTime';
   }
   
-  const response = await calendar.events.list(params);
-  return {
-    events: response.data.items || [],
-    nextSyncToken: response.data.nextSyncToken
-  };
+  // Follow nextPageToken — Google caps each page at maxResults, and a truncated list
+  // would make the sync miss events and treat their synced copies as orphans.
+  const events = [];
+  let nextSyncToken;
+  let pageToken;
+  do {
+    const response = await calendar.events.list({ ...params, pageToken });
+    events.push(...(response.data.items || []));
+    pageToken = response.data.nextPageToken;
+    nextSyncToken = response.data.nextSyncToken;
+  } while (pageToken);
+
+  return { events, nextSyncToken };
 }
 
 // Create event in target calendar

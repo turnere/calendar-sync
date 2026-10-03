@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "sync": "node src/sync-runner.js",
+    "audit": "node src/audit-runner.js",
     "export-config": "node src/export-config.js"
   },
   "dependencies": {

@@ -1383,4 +1383,4 @@ export function stopSyncScheduler() {
   }
 }
 
-export { performSync };
+export { performSync, filterExcludedEvents, extractSyncMarker, findExistingDuplicate };
