@@ -10,6 +10,10 @@ RUN npm install --production
 
 COPY . .
 
+# Commit deployed (passed in by the GitHub Action); shown in the UI header
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 8080
 
 CMD ["npm", "start"]

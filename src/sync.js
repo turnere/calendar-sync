@@ -1186,12 +1186,14 @@ syncRouter.post('/duplicates/batch', async (req, res) => {
 // Scan for TRUE duplicates within each calendar
 syncRouter.get('/scan-duplicates', async (req, res) => {
   const allCalendars = getEnabledCalendars();
-  
+
   if (allCalendars.length === 0) {
     return res.status(400).json({ error: 'No calendars configured' });
   }
-  
-  const accountNums = [...new Set(allCalendars.map(c => c.account_num))];
+
+  // External ICS feeds are read-only and have no Google account, so there's nothing to scan or delete
+  const googleCalendars = allCalendars.filter(c => c.source_type !== 'ics');
+  const accountNums = [...new Set(googleCalendars.map(c => c.account_num))];
   const auths = {};
   for (const acct of accountNums) {
     auths[acct] = getStoredAuthClient(acct);
@@ -1203,7 +1205,7 @@ syncRouter.get('/scan-duplicates', async (req, res) => {
   try {
     const calendarResults = [];
     
-    for (const cal of allCalendars) {
+    for (const cal of googleCalendars) {
       const { events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id);
       const duplicates = findDuplicatesInCalendar(events, allCalendars);
       

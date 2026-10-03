@@ -488,7 +488,15 @@
   <header>
     <h1>📅 Calendar Sync</h1>
     <p>Multi-calendar sync between your Google Calendars</p>
+    <p id="app-version" style="font-size:0.8rem;opacity:0.8;margin-top:4px"></p>
   </header>
+  <script>
+    fetch('/api/version').then(r => r.json()).then(v => {
+      const el = document.getElementById('app-version');
+      if (!v.short) { el.textContent = 'Version: unknown (local)'; return; }
+      el.innerHTML = 'Version: <a style="color:inherit" target="_blank" rel="noopener" href="https://github.com/turnere/calendar-sync/commit/' + v.sha + '">' + v.short + '</a>';
+    }).catch(() => {});
+  </script>
   
   <div class="container">
     <!-- Step 1: Connect Accounts -->

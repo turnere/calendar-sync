@@ -153,6 +153,12 @@ app.get('/health', (req, res) => {
   res.status(status.healthy ? 200 : 200).json(status);
 });
 
+// Deployed commit (GIT_SHA is baked in at build time by the deploy workflow)
+app.get('/api/version', (req, res) => {
+  const sha = process.env.GIT_SHA && process.env.GIT_SHA !== 'unknown' ? process.env.GIT_SHA : null;
+  res.json({ sha, short: sha ? sha.slice(0, 7) : null });
+});
+
 // Routes
 app.use('/auth', authRouter);
 app.use('/api/calendars', calendarRouter);
