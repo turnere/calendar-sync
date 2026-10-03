@@ -482,6 +482,72 @@
     
     .mode-bidir { background: #e3f2fd; color: #1565c0; }
     .mode-oneway { background: #fff3e0; color: #e65100; }
+
+    /* Status messages float so they're visible wherever you are on the page */
+    #sync-result {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      left: 16px;
+      max-width: 420px;
+      margin: 0 0 0 auto !important;
+      z-index: 1000;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    /* Sync routes */
+    .route-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 14px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      background: #fafafa;
+    }
+    .route-chip {
+      background: #fff;
+      border: 1px solid #c5cae9;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    .route-chip small { display: block; font-weight: 400; color: #888; font-size: 0.72rem; }
+    .route-arrow { font-size: 1.4rem; color: #667eea; font-weight: bold; }
+    .route-desc { flex-basis: 100%; font-size: 0.82rem; color: #666; }
+    .route-warning { background: #fff8e1; color: #8d6e00; border-radius: 6px; padding: 8px 12px; font-size: 0.85rem; margin-bottom: 10px; }
+    .route-form {
+      display: grid;
+      grid-template-columns: 1fr 170px 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-top: 16px;
+    }
+    .route-form label { font-size: 0.8rem; color: #777; display: block; margin-bottom: 4px; }
+    .route-form select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
+    @media (max-width: 700px) { .route-form { grid-template-columns: 1fr; } }
+
+    /* Duplicate scanner + review */
+    .howto { background: #f3f4ff; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 0.9rem; color: #444; }
+    .howto ol { margin: 8px 0 0 20px; }
+    .howto li { margin-bottom: 4px; }
+    .dup-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 4px; background: #fff; }
+    .dup-row.will-delete { background: #ffebee; border-color: #ef9a9a; }
+    .dup-row.keep { background: #e8f5e9; border-color: #a5d6a7; }
+    .dup-pill { font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
+    .dup-pill.keep { background: #2e7d32; color: #fff; }
+    .dup-pill.del { background: #c62828; color: #fff; }
+    .dup-pill.stay { background: #757575; color: #fff; }
+    .dup-bar { position: sticky; bottom: 0; background: #fff; border: 2px solid #ffb74d; border-radius: 8px; padding: 12px 16px; margin-top: 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(0,0,0,0.08); }
+    .review-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #fafafa; }
+    .review-events { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+    .review-ev { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 0.88rem; }
+    .review-ev .lbl { font-size: 0.7rem; text-transform: uppercase; color: #888; letter-spacing: .04em; }
+    .review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    @media (max-width: 700px) { .review-events { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -526,11 +592,11 @@
     
     <!-- Step 2: Configure Calendars -->
     <div id="config-section" class="card hidden">
-      <h2><span class="step">2</span> Configure Calendars</h2>
-      
+      <h2><span class="step">2</span> Your Calendars</h2>
+
       <p style="color: #666; margin-bottom: 20px;">
-        Add calendars from either account. <strong>Bidirectional</strong> calendars sync with all bidirectional calendars on the other account. 
-        <strong>One-way</strong> calendars push events to all bidirectional calendars.
+        Add the calendars you want involved, and set a prefix/suffix and color for the copies they create.
+        Adding a calendar here doesn't sync it anywhere yet &mdash; choose where it syncs in <strong>Step 3: Sync Routes</strong>.
       </p>
       
       <div id="calendar-list" class="calendar-list">
@@ -584,9 +650,46 @@
       </div>
     </div>
     
-    <!-- Step 3: Sync Status & Controls -->
+    <!-- Step 3: Sync Routes -->
+    <div id="routes-section" class="card hidden">
+      <h2><span class="step">3</span> Sync Routes</h2>
+      <p style="color: #666; margin-bottom: 16px;">
+        This is the full map of what copies to what. Each line connects two calendars:
+        <strong>⇄ Two-way</strong> keeps both calendars in step (a new event on either one is copied to the other),
+        <strong>→ One-way</strong> copies from the left calendar to the right one and never sends anything back.
+        If a calendar isn't in any route, it isn't syncing anywhere.
+      </p>
+      <div id="route-warnings"></div>
+      <div id="route-list"><div class="empty-state">No routes yet</div></div>
+
+      <div class="route-form">
+        <div>
+          <label>From</label>
+          <select id="route-source"></select>
+        </div>
+        <div>
+          <label>Type</label>
+          <select id="route-type">
+            <option value="oneway">→ One-way</option>
+            <option value="both">⇄ Two-way</option>
+          </select>
+        </div>
+        <div>
+          <label>To</label>
+          <select id="route-target"></select>
+        </div>
+        <div>
+          <button id="add-route-btn" class="btn btn-primary btn-sm" style="margin-bottom: 0;">+ Add route</button>
+        </div>
+      </div>
+      <p style="font-size: 0.8rem; color: #999; margin-top: 8px;">
+        Two-way needs calendars from different Google accounts. External booking feeds (RVezy, RVshare, ...) can only be a "From" in a one-way route.
+      </p>
+    </div>
+
+    <!-- Step 4: Sync Status & Controls -->
     <div id="sync-section" class="card hidden">
-      <h2><span class="step">3</span> Sync Status</h2>
+      <h2><span class="step">4</span> Sync Status</h2>
       
       <div class="sync-status">
         <div>
@@ -615,27 +718,48 @@
       </div>
     </div>
     
+    <!-- Events held back for review (flagged as possible duplicates during sync) -->
+    <div id="review-section" class="card hidden">
+      <h2><span class="step">🤔</span> Needs Your Review <span id="review-count" class="mode-badge mode-oneway" style="margin-left: 8px;"></span></h2>
+      <p style="color: #666; margin-bottom: 16px;">
+        While syncing, these events looked like they might already exist on the destination calendar, so they were
+        <strong>held back instead of copied</strong>. Compare the two and choose what to do:
+      </p>
+      <ul style="color: #666; font-size: 0.88rem; margin: 0 0 16px 20px;">
+        <li><strong>Same event</strong> &mdash; they're the same thing. Nothing new is created; the two are linked so future edits follow along.</li>
+        <li><strong>Different event</strong> &mdash; not a duplicate. A new copy is created on the destination calendar.</li>
+        <li><strong>Skip</strong> &mdash; don't copy it, and don't ask again.</li>
+      </ul>
+      <div id="review-list"></div>
+    </div>
+
     <!-- Duplicate Scanner -->
     <div id="duplicates-section" class="card hidden">
       <h2>
-        <span class="step">🔍</span> 
+        <span class="step">🔍</span>
         Duplicate Scanner
       </h2>
-      
-      <div class="alert alert-info" style="margin-bottom: 20px;">
-        Scan for duplicate events <strong>within each calendar</strong>. 
-        This helps clean up leftovers from previous sync tools.
+
+      <div class="howto">
+        Finds events that appear <strong>more than once on the same calendar</strong> (for example, leftovers from an older sync tool).
+        <ol>
+          <li>Click <strong>Scan for Duplicates</strong>. Nothing is changed by scanning.</li>
+          <li>For each group, the <span class="dup-pill keep">KEEP</span> copy stays. Copies marked <span class="dup-pill del">DELETE</span> are ticked for removal &mdash; untick any you want to keep.</li>
+          <li>When you're happy, click the orange <strong>Delete selected</strong> bar at the bottom. Deleted events can't be restored from here.</li>
+        </ol>
       </div>
-      
+
       <button id="scan-duplicates" class="btn btn-primary" style="margin-bottom: 20px;">Scan for Duplicates</button>
-      
+
       <div id="duplicates-results" class="hidden">
-        <div id="delete-summary" class="alert" style="display: none; margin-bottom: 20px;">
-          <span id="selected-count">0</span> event(s) selected for deletion
-          <button id="delete-all-btn" class="btn btn-danger" style="margin-left: 15px;" onclick="deleteAllSelected()">Delete All Selected</button>
-        </div>
-        
         <div id="duplicates-list"></div>
+
+        <div id="delete-summary" class="dup-bar" style="display: none;">
+          <span><strong id="selected-count">0</strong> event(s) ticked for deletion</span>
+          <button class="btn btn-outline btn-sm" onclick="setAllDupChecks(true)">Tick all</button>
+          <button class="btn btn-outline btn-sm" onclick="setAllDupChecks(false)">Untick all</button>
+          <button id="delete-all-btn" class="btn btn-danger" onclick="deleteAllSelected()">Delete selected</button>
+        </div>
       </div>
     </div>
     
@@ -688,6 +812,7 @@
       calendars1: [],
       calendars2: [],
       configuredCalendars: [],
+      routes: [],
       syncConfig: null
     };
     
@@ -715,12 +840,14 @@
           await loadCalendars();
           await loadSyncConfig();
           document.getElementById('config-section').classList.remove('hidden');
+          document.getElementById('routes-section').classList.remove('hidden');
           document.getElementById('sync-section').classList.remove('hidden');
           document.getElementById('duplicates-section').classList.remove('hidden');
           document.getElementById('logs-section').classList.remove('hidden');
           
           await loadLogs();
           await loadIcsUrl();
+          await loadReview();
         }
       } catch (error) {
         console.error('Error loading status:', error);
@@ -797,7 +924,9 @@
         const data = await response.json();
         
         state.configuredCalendars = data.calendars || [];
+        state.routes = data.routes || [];
         updateSyncStatus(data.enabled, data.last_sync);
+        renderRoutes();
         renderCalendarList();
         updateAddCalendarDropdown();
       } catch (error) {
@@ -816,21 +945,12 @@
       
       container.innerHTML = state.configuredCalendars.map(cal => {
         const isIcs = cal.source_type === 'ics';
+        const summary = routeSummaryFor(cal);
         const modeBadge = isIcs
-          ? '<span class="mode-badge mode-oneway">One-way (external)</span>'
-          : cal.sync_mode === 'one-way'
-            ? '<span class="mode-badge mode-oneway">One-way</span>'
-            : '<span class="mode-badge mode-bidir">Bidirectional</span>';
+          ? '<span class="mode-badge mode-oneway">External feed</span>'
+          : '';
 
-        const modeField = isIcs
-          ? `<div><label>Mode</label><input type="text" value="One-way (fixed)" disabled></div>`
-          : `<div>
-              <label>Mode</label>
-              <select onchange="updateCalendarField(${cal.id}, 'syncMode', this.value)">
-                <option value="bidirectional" ${cal.sync_mode === 'bidirectional' ? 'selected' : ''}>Bidirectional</option>
-                <option value="one-way" ${cal.sync_mode === 'one-way' ? 'selected' : ''}>One-way</option>
-              </select>
-            </div>`;
+        const modeField = `<div><label>Syncs with (edit in Step 3)</label><input type="text" value="${escapeHtml(summary.text)}" title="${escapeHtml(summary.text)}" disabled></div>`;
 
         return `
           <div class="calendar-row" data-cal-id="${cal.id}">
@@ -883,6 +1003,215 @@
       }).join('');
     }
     
+    // --- Sync routes ---
+
+    function calById(id) {
+      return state.configuredCalendars.find(c => c.id === id);
+    }
+
+    function calAccountLabel(cal) {
+      return cal.source_type === 'ics' ? 'External feed' : `Account ${cal.account_num}`;
+    }
+
+    // Short text describing where one calendar's events go / come from
+    function routeSummaryFor(cal) {
+      const parts = [];
+      for (const r of state.routes) {
+        if (r.source_calendar_id === cal.id) {
+          const other = calById(r.target_calendar_id);
+          if (other) parts.push(`${r.bidirectional ? '⇄' : '→'} ${other.calendar_name}`);
+        } else if (r.target_calendar_id === cal.id) {
+          const other = calById(r.source_calendar_id);
+          if (other) parts.push(`${r.bidirectional ? '⇄' : '←'} ${other.calendar_name}`);
+        }
+      }
+      return { text: parts.length ? parts.join(',  ') : 'Not syncing anywhere', count: parts.length };
+    }
+
+    function routeChip(cal) {
+      return `<div class="route-chip">${escapeHtml(cal.calendar_name || cal.calendar_id)}<small>${calAccountLabel(cal)}</small></div>`;
+    }
+
+    function renderRoutes() {
+      const cals = state.configuredCalendars;
+      const list = document.getElementById('route-list');
+      const warnings = document.getElementById('route-warnings');
+
+      // Keep the add-route selections across re-renders
+      const srcSel = document.getElementById('route-source');
+      const tgtSel = document.getElementById('route-target');
+      const prevSrc = srcSel.value, prevTgt = tgtSel.value;
+      const opt = c => `<option value="${c.id}">${escapeHtml(c.calendar_name || c.calendar_id)} (${calAccountLabel(c)})</option>`;
+      srcSel.innerHTML = cals.map(opt).join('');
+      tgtSel.innerHTML = cals.filter(c => c.source_type !== 'ics').map(opt).join('');
+      if (prevSrc) srcSel.value = prevSrc;
+      if (prevTgt) tgtSel.value = prevTgt;
+
+      const routes = state.routes.filter(r => calById(r.source_calendar_id) && calById(r.target_calendar_id));
+
+      if (routes.length === 0) {
+        list.innerHTML = '<div class="empty-state">No routes yet &mdash; nothing is syncing. Add one below.</div>';
+      } else {
+        list.innerHTML = routes.map(r => {
+          const a = calById(r.source_calendar_id);
+          const b = calById(r.target_calendar_id);
+          const canBoth = a.source_type !== 'ics' && a.account_num !== b.account_num;
+          const desc = r.bidirectional
+            ? `New events on <strong>${escapeHtml(a.calendar_name)}</strong> are copied to <strong>${escapeHtml(b.calendar_name)}</strong>, and new events on <strong>${escapeHtml(b.calendar_name)}</strong> are copied to <strong>${escapeHtml(a.calendar_name)}</strong>.`
+            : `Events on <strong>${escapeHtml(a.calendar_name)}</strong> are copied to <strong>${escapeHtml(b.calendar_name)}</strong>. Nothing is ever sent back.`;
+          return `
+            <div class="route-row">
+              ${routeChip(a)}
+              <span class="route-arrow">${r.bidirectional ? '⇄' : '→'}</span>
+              ${routeChip(b)}
+              <select onchange="changeRouteType(${r.id}, this.value)" style="margin-left: auto; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="oneway" ${r.bidirectional ? '' : 'selected'}>→ One-way</option>
+                <option value="both" ${r.bidirectional ? 'selected' : ''} ${canBoth ? '' : 'disabled'}>⇄ Two-way</option>
+              </select>
+              <button class="btn btn-danger btn-sm" onclick="removeRoute(${r.id})" title="Remove route">✕</button>
+              <div class="route-desc">${desc}</div>
+            </div>`;
+        }).join('');
+      }
+
+      // Warnings: calendars that sync nowhere, and sources that would reach a calendar twice
+      const notes = [];
+      const idle = cals.filter(c => c.enabled !== 0 && routeSummaryFor(c).count === 0);
+      if (idle.length) {
+        notes.push(`Not syncing anywhere: <strong>${idle.map(c => escapeHtml(c.calendar_name)).join(', ')}</strong>. Add a route below to connect ${idle.length > 1 ? 'them' : 'it'}.`);
+      }
+      for (const src of cals) {
+        const targets = routes.filter(r => !r.bidirectional && r.source_calendar_id === src.id).map(r => r.target_calendar_id);
+        for (let i = 0; i < targets.length; i++) {
+          for (let j = i + 1; j < targets.length; j++) {
+            const linked = routes.some(r => r.bidirectional &&
+              ((r.source_calendar_id === targets[i] && r.target_calendar_id === targets[j]) ||
+               (r.source_calendar_id === targets[j] && r.target_calendar_id === targets[i])));
+            if (linked) {
+              notes.push(`<strong>${escapeHtml(src.calendar_name)}</strong> copies to both <strong>${escapeHtml(calById(targets[i]).calendar_name)}</strong> and <strong>${escapeHtml(calById(targets[j]).calendar_name)}</strong>, which also sync with each other two-way. Its events can arrive on one of them twice (directly and via the other), which is a common cause of duplicates. Usually you want just one of those routes.`);
+            }
+          }
+        }
+      }
+      warnings.innerHTML = notes.map(n => `<div class="route-warning">⚠️ ${n}</div>`).join('');
+    }
+
+    async function addRoute() {
+      const sourceId = parseInt(document.getElementById('route-source').value);
+      const targetId = parseInt(document.getElementById('route-target').value);
+      const bidirectional = document.getElementById('route-type').value === 'both';
+      if (!sourceId || !targetId) { showResult('Pick a calendar on both sides', 'warning'); return; }
+
+      try {
+        const response = await fetch('/api/sync/routes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceId, targetId, bidirectional })
+        });
+        const result = await response.json();
+        if (result.error) { showResult(`Error: ${result.error}`, 'warning'); return; }
+        showResult('Route added. It will start syncing on the next sync run.', 'success');
+        await loadSyncConfig();
+      } catch (error) {
+        console.error('Error adding route:', error);
+        showResult('Error adding route', 'warning');
+      }
+    }
+
+    async function changeRouteType(id, value) {
+      try {
+        const response = await fetch(`/api/sync/routes/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bidirectional: value === 'both' })
+        });
+        const result = await response.json();
+        if (result.error) showResult(`Error: ${result.error}`, 'warning');
+        else showResult('Route updated', 'success');
+      } catch (error) {
+        showResult('Error updating route', 'warning');
+      }
+      await loadSyncConfig();
+    }
+
+    async function removeRoute(id) {
+      if (!confirm('Stop syncing between these calendars? Copies already created are not deleted.')) return;
+      try {
+        await fetch(`/api/sync/routes/${id}`, { method: 'DELETE' });
+        showResult('Route removed', 'success');
+      } catch (error) {
+        showResult('Error removing route', 'warning');
+      }
+      await loadSyncConfig();
+    }
+
+    // --- Events held back for review ---
+
+    async function loadReview() {
+      try {
+        const response = await fetch('/api/sync/duplicates');
+        const items = await response.json();
+        renderReview(Array.isArray(items) ? items : []);
+      } catch (error) {
+        console.error('Error loading review queue:', error);
+      }
+    }
+
+    function fmtEventTime(ev) {
+      const raw = ev?.start?.dateTime || ev?.start?.date;
+      if (!raw) return '';
+      const d = new Date(raw);
+      return ev.start.date ? d.toLocaleDateString(undefined, { timeZone: 'UTC' }) : d.toLocaleString();
+    }
+
+    function renderReview(items) {
+      const section = document.getElementById('review-section');
+      document.getElementById('review-count').textContent = items.length ? `${items.length} waiting` : '';
+      section.classList.toggle('hidden', items.length === 0);
+
+      document.getElementById('review-list').innerHTML = items.map(d => {
+        const src = state.configuredCalendars.find(c => c.calendar_id === d.source_calendar_id);
+        const tgt = state.configuredCalendars.find(c => c.calendar_id === d.target_calendar_id);
+        const route = src && tgt ? `${escapeHtml(src.calendar_name)} → ${escapeHtml(tgt.calendar_name)}` : '';
+        return `
+          <div class="review-card" id="review-${d.id}">
+            ${route ? `<div style="font-size: 0.8rem; color: #888;">Was being copied: ${route}</div>` : ''}
+            <div class="review-events">
+              <div class="review-ev"><div class="lbl">Event to be copied${src ? ' (on ' + escapeHtml(src.calendar_name) + ')' : ''}</div>
+                <strong>${escapeHtml(d.source_event_data.summary || '(no title)')}</strong><br>${escapeHtml(fmtEventTime(d.source_event_data))}</div>
+              <div class="review-ev"><div class="lbl">Already there${tgt ? ' (on ' + escapeHtml(tgt.calendar_name) + ')' : ''}</div>
+                <strong>${escapeHtml(d.existing_event_data.summary || '(no title)')}</strong><br>${escapeHtml(fmtEventTime(d.existing_event_data))}</div>
+            </div>
+            <div class="review-actions">
+              <button class="btn btn-success btn-sm" onclick="resolveReview(${d.id}, 'link')">Same event — link them</button>
+              <button class="btn btn-primary btn-sm" onclick="resolveReview(${d.id}, 'sync')">Different event — create copy</button>
+              <button class="btn btn-outline btn-sm" onclick="resolveReview(${d.id}, 'skip')">Skip</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function resolveReview(id, action) {
+      document.querySelectorAll(`#review-${id} button`).forEach(b => b.disabled = true);
+      try {
+        const response = await fetch(`/api/sync/duplicates/${id}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action })
+        });
+        const result = await response.json();
+        if (result.error) {
+          showResult(`Error: ${result.error}${result.details ? ' (' + result.details + ')' : ''}`, 'warning');
+        } else {
+          showResult({ link: 'Linked to the existing event', sync: 'Copy created', skip: 'Skipped' }[action], 'success');
+        }
+      } catch (error) {
+        showResult('Error resolving event', 'warning');
+      }
+      await loadReview();
+      await loadLogs();
+    }
+
     // Populate the color dropdown for the "add external calendar" form
     function populateIcsColorSelect() {
       const select = document.getElementById('add-ics-color');
@@ -1163,7 +1492,7 @@
     }
     
     // Scan for duplicates
-    async function scanDuplicates() {
+    async function scanDuplicates(afterDelete = false) {
       const btn = document.getElementById('scan-duplicates');
       btn.disabled = true;
       btn.textContent = 'Scanning...';
@@ -1185,21 +1514,25 @@
         let html = '';
         for (const cal of data.calendars) {
           totalDups += cal.duplicates.length;
-          html += `<h3 style="margin: 15px 0 10px;">${escapeHtml(cal.name)} (Account ${cal.accountNum})</h3>`;
-          
+          html += `<h3 style="margin: 15px 0 10px;">${escapeHtml(cal.name)} <span style="font-weight: 400; color: #888; font-size: 0.85rem;">(Account ${cal.accountNum})</span></h3>`;
+
           if (cal.duplicates.length === 0) {
-            html += '<div class="empty-state">No duplicates found</div>';
+            html += '<div class="empty-state">✓ No duplicates on this calendar</div>';
           } else {
-            html += renderDuplicateGroups(cal.duplicates, cal.accountNum, cal.id);
+            html += renderDuplicateGroups(cal.duplicates, cal.accountNum, cal.calendarId);
           }
         }
-        
+
         container.innerHTML = html;
-        
-        if (totalDups === 0) {
-          showResult('No duplicates found in any calendar!', 'success');
-        } else {
-          showResult(`Found ${totalDups} duplicate group(s) - review and delete extras`, 'info');
+        updateDeleteCount();
+
+        // After a delete, keep the "Deleted N" message instead of replacing it
+        if (!afterDelete) {
+          if (totalDups === 0) {
+            showResult('No duplicates found in any calendar!', 'success');
+          } else {
+            showResult(`Found ${totalDups} duplicate group(s). Review below, then use the Delete bar at the bottom.`, 'info');
+          }
         }
       } catch (error) {
         console.error('Error scanning duplicates:', error);
@@ -1211,64 +1544,66 @@
     }
     
     // Render duplicate groups
-    function renderDuplicateGroups(duplicates, accountNum, calDbId) {
+    function renderDuplicateGroups(duplicates, accountNum, calendarId) {
+      const explain = {
+        exact: ['EXACT', '#f44336', 'Same title at the same time.'],
+        potential: ['SIMILAR', '#ff9800', 'Similar titles on the same day. These might be different events, so none are ticked for deletion by default — tick any you want removed.'],
+        corrupted: ['BROKEN COPY', '#9c27b0', 'The title has more than one sync prefix, which means a copy was copied again. These are ticked for deletion.']
+      };
+
       return duplicates.map(dup => {
-        let typeLabel;
-        if (dup.type === 'corrupted') {
-          typeLabel = '<span style="background: #9c27b0; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">CORRUPTED</span>';
-        } else if (dup.type === 'exact') {
-          typeLabel = '<span style="background: #f44336; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">EXACT</span>';
-        } else {
-          typeLabel = '<span style="background: #ff9800; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">SIMILAR</span>';
-        }
-        
+        const [label, color, help] = explain[dup.type] || explain.potential;
         const isCorrupted = dup.type === 'corrupted';
-        
+        const defaultTicked = dup.type !== 'potential';
+
         return `
           <div class="duplicate-item">
             <div style="margin-bottom: 8px;">
-              <strong>${escapeHtml(dup.title)}</strong>${typeLabel}
-              <div style="font-size: 0.85rem; color: #666;">
-                ${escapeHtml(dup.time || '')} &bull; ${dup.count} copies found
-              </div>
+              <strong>${escapeHtml(dup.title)}</strong>
+              <span style="background: ${color}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 8px;">${label}</span>
+              <div style="font-size: 0.85rem; color: #666;">${escapeHtml(dup.time || '')} &bull; ${dup.count} copies found</div>
+              <div style="font-size: 0.8rem; color: #888;">${help}</div>
             </div>
-            
             ${dup.events.map((event, idx) => {
-              const isKeep = !isCorrupted && idx === 0;
+              const alwaysKeep = !isCorrupted && idx === 0;
+              const when = fmtEventTime(event);
               return `
-              <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: ${isKeep ? '#e8f5e9' : (isCorrupted ? '#ffebee' : '#fff')}; border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 4px;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                  ${isKeep ? `
-                    <span style="width: 18px; text-align: center; color: #2e7d32;">✓</span>
-                  ` : `
-                    <input type="checkbox" class="delete-checkbox" data-account="${accountNum}" data-event-id="${event.id}" checked onchange="updateDeleteCount()">
-                  `}
-                  <div>
-                    <span style="font-size: 0.85rem; ${isKeep ? 'color: #2e7d32; font-weight: 500;' : (isCorrupted ? 'color: #c62828;' : '')}">${escapeHtml(event.summary || '')}</span>
-                    ${isKeep ? '<span style="font-size: 0.75rem; color: #999; margin-left: 8px;">(Keep)</span>' : ''}
-                  </div>
-                </div>
-              </div>
-            `}).join('')}
+              <div class="dup-row ${alwaysKeep ? 'keep' : ''}">
+                ${alwaysKeep
+                  ? '<span style="width: 18px;"></span>'
+                  : `<input type="checkbox" class="delete-checkbox" data-account="${accountNum}" data-calendar="${escapeHtml(calendarId)}" data-event-id="${event.id}" ${defaultTicked ? 'checked' : ''} onchange="updateDeleteCount()">`}
+                <span class="dup-pill ${alwaysKeep ? 'keep' : 'del'}">${alwaysKeep ? 'KEEP' : 'DELETE'}</span>
+                <span style="font-size: 0.88rem;">${escapeHtml(event.summary || '(no title)')}</span>
+                <span style="font-size: 0.78rem; color: #888; margin-left: auto;">${escapeHtml(when)}</span>
+              </div>`;
+            }).join('')}
           </div>
         `;
       }).join('');
     }
-    
-    // Update the delete count display
+
+    // Refresh row colors/pills and the delete bar to match the ticked boxes
     function updateDeleteCount() {
-      const checkboxes = document.querySelectorAll('.delete-checkbox:checked');
-      const count = checkboxes.length;
-      const summary = document.getElementById('delete-summary');
-      const countSpan = document.getElementById('selected-count');
-      
-      if (count > 0) {
-        summary.style.display = 'block';
-        summary.className = 'alert alert-warning';
-        countSpan.textContent = count;
-      } else {
-        summary.style.display = 'none';
-      }
+      const all = document.querySelectorAll('.delete-checkbox');
+      let count = 0;
+      all.forEach(cb => {
+        const row = cb.closest('.dup-row');
+        const pill = row.querySelector('.dup-pill');
+        row.classList.toggle('will-delete', cb.checked);
+        pill.className = `dup-pill ${cb.checked ? 'del' : 'keep'}`;
+        pill.textContent = cb.checked ? 'DELETE' : 'KEEP';
+        if (cb.checked) count++;
+      });
+
+      document.getElementById('selected-count').textContent = count;
+      document.getElementById('delete-all-btn').disabled = count === 0;
+      document.getElementById('delete-all-btn').textContent = count ? `Delete ${count} selected` : 'Delete selected';
+      document.getElementById('delete-summary').style.display = all.length ? 'flex' : 'none';
+    }
+
+    function setAllDupChecks(checked) {
+      document.querySelectorAll('.delete-checkbox').forEach(cb => cb.checked = checked);
+      updateDeleteCount();
     }
     
     // Delete all selected duplicates
@@ -1276,11 +1611,12 @@
       const checkboxes = document.querySelectorAll('.delete-checkbox:checked');
       const events = Array.from(checkboxes).map(cb => ({
         accountNum: parseInt(cb.dataset.account),
+        calendarId: cb.dataset.calendar,
         eventId: cb.dataset.eventId
       }));
       
       if (events.length === 0) {
-        showResult('No events selected', 'info');
+        showResult('Nothing is ticked for deletion', 'info');
         return;
       }
       
@@ -1299,17 +1635,15 @@
         
         const result = await response.json();
         
-        if (result.deleted > 0) {
-          showResult(`Deleted ${result.deleted} event(s)${result.failed > 0 ? `, ${result.failed} failed` : ''}`, result.failed > 0 ? 'warning' : 'success');
-        }
+        showResult(`Deleted ${result.deleted} event(s)${result.failed > 0 ? `, ${result.failed} failed` : ''}. Scanning again...`, result.failed > 0 ? 'warning' : 'success');
         
-        await scanDuplicates();
+        await scanDuplicates(true);
       } catch (error) {
         console.error('Error batch deleting:', error);
         showResult('Error deleting events', 'warning');
       } finally {
         btn.disabled = false;
-        btn.textContent = 'Delete All Selected';
+        updateDeleteCount();
       }
     }
     
@@ -1329,8 +1663,11 @@
       document.getElementById('sync-now').addEventListener('click', syncNow);
       
       // Scan duplicates
-      document.getElementById('scan-duplicates').addEventListener('click', scanDuplicates);
-      
+      document.getElementById('scan-duplicates').addEventListener('click', () => scanDuplicates());
+
+      // Add route
+      document.getElementById('add-route-btn').addEventListener('click', addRoute);
+
       // Add calendar
       document.getElementById('add-calendar-btn').addEventListener('click', addCalendar);
 

@@ -152,6 +152,43 @@ export function initDatabase() {
     console.log('Added exclude_keywords column to calendars');
   }
 
+  // Explicit sync routes between calendars (replaces deriving routes from sync_mode).
+  // When the table is first created, seed it from the old sync_mode rules so behavior is unchanged.
+  const routesExisted = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_routes'").get();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_routes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_calendar_id INTEGER NOT NULL,
+      target_calendar_id INTEGER NOT NULL,
+      bidirectional INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(source_calendar_id, target_calendar_id)
+    );
+  `);
+  if (!routesExisted) {
+    const cals = db.prepare('SELECT * FROM calendars').all();
+    const biDir = cals.filter(c => c.sync_mode === 'bidirectional' && c.source_type !== 'ics');
+    const insert = db.prepare('INSERT OR IGNORE INTO sync_routes (source_calendar_id, target_calendar_id, bidirectional) VALUES (?, ?, ?)');
+    for (let i = 0; i < biDir.length; i++) {
+      for (let j = i + 1; j < biDir.length; j++) {
+        if (biDir[i].account_num !== biDir[j].account_num) insert.run(biDir[i].id, biDir[j].id, 1);
+      }
+    }
+    for (const src of cals.filter(c => c.sync_mode === 'one-way' || c.source_type === 'ics')) {
+      for (const tgt of biDir) {
+        if (tgt.calendar_id !== src.calendar_id) insert.run(src.id, tgt.id, 0);
+      }
+    }
+    console.log('Created sync_routes from existing calendar modes');
+  }
+
+  // pending_duplicates: remember which calendars the held-back event was headed between
+  const pendingColumns = db.pragma("table_info('pending_duplicates')").map(c => c.name);
+  if (!pendingColumns.includes('source_calendar_id')) {
+    db.exec("ALTER TABLE pending_duplicates ADD COLUMN source_calendar_id TEXT");
+    db.exec("ALTER TABLE pending_duplicates ADD COLUMN target_calendar_id TEXT");
+  }
+
   // Add ics_token column to sync_config if missing
   if (!configColumns.includes('ics_token')) {
     db.exec("ALTER TABLE sync_config ADD COLUMN ics_token TEXT");
@@ -340,13 +377,13 @@ export function clearSyncLogs() {
 }
 
 // Pending duplicates management
-export function savePendingDuplicate(sourceAccount, sourceEventId, sourceEventData, existingEventId, existingEventData) {
+export function savePendingDuplicate(sourceAccount, sourceEventId, sourceEventData, existingEventId, existingEventData, sourceCalendarId = null, targetCalendarId = null) {
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO pending_duplicates 
-    (source_account, source_event_id, source_event_data, existing_event_id, existing_event_data, status)
-    VALUES (?, ?, ?, ?, ?, 'pending')
+    INSERT OR REPLACE INTO pending_duplicates
+    (source_account, source_event_id, source_event_data, existing_event_id, existing_event_data, status, source_calendar_id, target_calendar_id)
+    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
   `);
-  stmt.run(sourceAccount, sourceEventId, JSON.stringify(sourceEventData), existingEventId, JSON.stringify(existingEventData));
+  stmt.run(sourceAccount, sourceEventId, JSON.stringify(sourceEventData), existingEventId, JSON.stringify(existingEventData), sourceCalendarId, targetCalendarId);
 }
 
 export function getPendingDuplicates() {
@@ -435,7 +472,39 @@ export function removeCalendar(id) {
   if (cal) {
     db.prepare('DELETE FROM synced_events WHERE source_calendar_id = ? OR target_calendar_id = ?').run(cal.calendar_id, cal.calendar_id);
   }
+  db.prepare('DELETE FROM sync_routes WHERE source_calendar_id = ? OR target_calendar_id = ?').run(id, id);
   db.prepare('DELETE FROM calendars WHERE id = ?').run(id);
+}
+
+// --- Sync routes (calendars.id -> calendars.id) ---
+
+export function getRoutes() {
+  return db.prepare('SELECT * FROM sync_routes ORDER BY id').all().map(r => ({ ...r, bidirectional: !!r.bidirectional }));
+}
+
+// Any existing route between the two calendars, in either direction
+export function getRouteBetween(calIdA, calIdB) {
+  return db.prepare(`
+    SELECT * FROM sync_routes
+    WHERE (source_calendar_id = ? AND target_calendar_id = ?) OR (source_calendar_id = ? AND target_calendar_id = ?)
+  `).get(calIdA, calIdB, calIdB, calIdA);
+}
+
+export function saveRoute(sourceId, targetId, bidirectional) {
+  return db.prepare('INSERT INTO sync_routes (source_calendar_id, target_calendar_id, bidirectional) VALUES (?, ?, ?)')
+    .run(sourceId, targetId, bidirectional ? 1 : 0).lastInsertRowid;
+}
+
+export function getRouteById(id) {
+  return db.prepare('SELECT * FROM sync_routes WHERE id = ?').get(id);
+}
+
+export function updateRouteDirection(id, bidirectional) {
+  db.prepare('UPDATE sync_routes SET bidirectional = ? WHERE id = ?').run(bidirectional ? 1 : 0, id);
+}
+
+export function deleteRoute(id) {
+  db.prepare('DELETE FROM sync_routes WHERE id = ?').run(id);
 }
 
 export function getIcsToken() {

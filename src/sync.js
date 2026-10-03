@@ -30,7 +30,13 @@ import {
   updateCalendar,
   removeCalendar,
   getIcsToken,
-  saveSyncEnabled
+  saveSyncEnabled,
+  getRoutes,
+  getRouteBetween,
+  getRouteById,
+  saveRoute,
+  updateRouteDirection,
+  deleteRoute
 } from './database.js';
 import {
   getEventsForSync,
@@ -349,7 +355,7 @@ function getSameDayEvents(event, otherEvents) {
 // of something already on the target calendar that day. If so, file it for user review
 // (via the existing pending_duplicates flow) instead of creating a redundant copy.
 // Returns true if the event was flagged and the caller should skip creating it.
-async function maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results) {
+async function maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results, sourceCal, targetCal) {
   if (isPendingDuplicate(sourceEvent.id, sourceAccount)) {
     results.duplicatesFound++;
     return true;
@@ -364,7 +370,8 @@ async function maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, re
   const matchedEvent = candidates.find(e => e.id === match.matched_event_id);
   if (!matchedEvent) return false;
 
-  savePendingDuplicate(sourceAccount, sourceEvent.id, sourceEvent, matchedEvent.id, matchedEvent);
+  savePendingDuplicate(sourceAccount, sourceEvent.id, sourceEvent, matchedEvent.id, matchedEvent,
+    sourceCal.calendar_id, targetCal.calendar_id);
   results.duplicatesFound++;
   addSyncLog('ai_duplicate_flagged', sourceAccount, sourceEvent.summary, 'info',
     `AI flagged possible duplicate of "${matchedEvent.summary}" (confidence ${match.confidence}): ${match.reason}`);
@@ -459,37 +466,28 @@ async function performSync() {
       console.log(`  Found ${calEvents[cal.id].length} events`);
     }
     
-    const biDirCals = allCalendars.filter(c => c.sync_mode === 'bidirectional');
-    const oneWayCals = allCalendars.filter(c => c.sync_mode === 'one-way');
-    
-    // Bidirectional sync: each bidir cal syncs with every bidir cal on the OTHER account
-    for (let i = 0; i < biDirCals.length; i++) {
-      for (let j = i + 1; j < biDirCals.length; j++) {
-        const calA = biDirCals[i];
-        const calB = biDirCals[j];
-        if (calA.account_num === calB.account_num) continue;
-        
-        const authA = auths[calA.account_num];
-        const authB = auths[calB.account_num];
-        
-        // Sync A → B
+    // Run each explicit route the user configured (Sync Routes in the UI)
+    const calById = new Map(allCalendars.map(c => [c.id, c]));
+    for (const route of getRoutes()) {
+      const calA = calById.get(route.source_calendar_id);
+      const calB = calById.get(route.target_calendar_id);
+      if (!calA || !calB || calA.calendar_id === calB.calendar_id) continue; // disabled/removed calendar
+      if (calB.source_type === 'ics') continue; // external feeds are read-only
+
+      const authA = auths[calA.account_num];
+      const authB = auths[calB.account_num];
+
+      if (route.bidirectional) {
+        // Two-way needs two real Google calendars on different accounts (marker-based ping-pong protection)
+        if (calA.source_type === 'ics' || calA.account_num === calB.account_num) continue;
+
         await syncEvents(calEvents[calA.id], calEvents[calB.id], authA, authB, calA, calB, allCalendars, results);
-        // Sync B → A
         await syncEvents(calEvents[calB.id], calEvents[calA.id], authB, authA, calB, calA, allCalendars, results);
-        // Cleanup orphaned
         await cleanupOrphanedEvents(calEvents[calA.id], authB, calB, calA, results);
         await cleanupOrphanedEvents(calEvents[calB.id], authA, calA, calB, results);
-      }
-    }
-    
-    // One-way sync: each one-way cal syncs to all bidir cals (except same calendar)
-    for (const srcCal of oneWayCals) {
-      for (const targetCal of biDirCals) {
-        if (targetCal.calendar_id === srcCal.calendar_id) continue;
-        const targetAuth = auths[targetCal.account_num];
-        
-        await syncOneWayEvents(calEvents[srcCal.id], calEvents[targetCal.id], targetAuth, srcCal, targetCal, allCalendars, results);
-        await cleanupOrphanedEvents(calEvents[srcCal.id], targetAuth, targetCal, srcCal, results);
+      } else {
+        await syncOneWayEvents(calEvents[calA.id], calEvents[calB.id], authB, calA, calB, allCalendars, results);
+        await cleanupOrphanedEvents(calEvents[calA.id], authB, calB, calA, results);
       }
     }
     
@@ -610,7 +608,7 @@ async function syncEvents(sourceEvents, targetEvents, sourceAuth, targetAuth, so
       }
 
       // AI-assisted fuzzy duplicate check (catches same event under different wording)
-      if (await maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results)) {
+      if (await maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results, sourceCal, targetCal)) {
         continue;
       }
 
@@ -704,7 +702,7 @@ async function syncOneWayEvents(sourceEvents, targetEvents, targetAuth, sourceCa
       }
 
       // AI-assisted fuzzy duplicate check (catches same event under different wording)
-      if (await maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results)) {
+      if (await maybeFlagAiDuplicate(sourceEvent, sourceAccount, targetEvents, results, sourceCal, targetCal)) {
         continue;
       }
 
@@ -940,7 +938,63 @@ export async function getCombinedEvents() {
 syncRouter.get('/config', (req, res) => {
   const config = getSyncConfig();
   const calendars = getCalendars();
-  res.json({ ...(config || {}), calendars });
+  res.json({ ...(config || {}), calendars, routes: getRoutes() });
+});
+
+// Sync routes: which calendar copies to which, and whether it's one-way or two-way
+syncRouter.get('/routes', (req, res) => {
+  res.json(getRoutes());
+});
+
+syncRouter.post('/routes', (req, res) => {
+  const sourceId = parseInt(req.body.sourceId);
+  const targetId = parseInt(req.body.targetId);
+  const bidirectional = !!req.body.bidirectional;
+
+  const source = getCalendarById(sourceId);
+  const target = getCalendarById(targetId);
+  if (!source || !target) return res.status(404).json({ error: 'Calendar not found' });
+  if (source.id === target.id) return res.status(400).json({ error: 'Pick two different calendars' });
+  if (target.source_type === 'ics') {
+    return res.status(400).json({ error: `"${target.calendar_name}" is an external read-only feed and can't receive events` });
+  }
+  if (bidirectional) {
+    if (source.source_type === 'ics') {
+      return res.status(400).json({ error: `"${source.calendar_name}" is an external feed and can only be one-way` });
+    }
+    if (source.account_num === target.account_num) {
+      return res.status(400).json({ error: 'Two-way sync needs calendars from different Google accounts. Use one-way for calendars in the same account.' });
+    }
+  }
+  if (getRouteBetween(source.id, target.id)) {
+    return res.status(409).json({ error: 'These two calendars are already connected. Remove the existing route first to change it.' });
+  }
+
+  const id = saveRoute(source.id, target.id, bidirectional);
+  res.json({ success: true, id });
+});
+
+syncRouter.put('/routes/:id', (req, res) => {
+  const route = getRouteById(parseInt(req.params.id));
+  if (!route) return res.status(404).json({ error: 'Route not found' });
+
+  const bidirectional = !!req.body.bidirectional;
+  if (bidirectional) {
+    const source = getCalendarById(route.source_calendar_id);
+    const target = getCalendarById(route.target_calendar_id);
+    if (source.source_type === 'ics' || source.account_num === target.account_num) {
+      return res.status(400).json({ error: 'Two-way sync needs Google calendars on different accounts' });
+    }
+  }
+  updateRouteDirection(route.id, bidirectional);
+  res.json({ success: true });
+});
+
+syncRouter.delete('/routes/:id', (req, res) => {
+  const route = getRouteById(parseInt(req.params.id));
+  if (!route) return res.status(404).json({ error: 'Route not found' });
+  deleteRoute(route.id);
+  res.json({ success: true });
 });
 
 // Save sync configuration (simplified — just enabled state)
@@ -1062,6 +1116,21 @@ syncRouter.get('/duplicates', (req, res) => {
   res.json(duplicates);
 });
 
+// Which calendars a held-back event was going between. Newer rows store them; older rows
+// fall back to the first bidirectional calendar on each side.
+function getDuplicateCalendars(duplicate, allCalendars) {
+  const byId = id => allCalendars.find(c => c.calendar_id === id);
+  let sourceCal = byId(duplicate.source_calendar_id);
+  let targetCal = byId(duplicate.target_calendar_id);
+  if (!sourceCal || !targetCal) {
+    const sourceAccount = duplicate.source_account;
+    const targetAccount = sourceAccount === 1 ? 2 : 1;
+    sourceCal = allCalendars.find(c => c.account_num === sourceAccount && c.sync_mode === 'bidirectional');
+    targetCal = allCalendars.find(c => c.account_num === targetAccount && c.sync_mode === 'bidirectional');
+  }
+  return sourceCal && targetCal ? { sourceCal, targetCal } : null;
+}
+
 // Resolve a duplicate
 syncRouter.post('/duplicates/:id/resolve', async (req, res) => {
   const id = parseInt(req.params.id);
@@ -1077,20 +1146,13 @@ syncRouter.post('/duplicates/:id/resolve', async (req, res) => {
   try {
     if (action === 'sync') {
       const sourceAccount = duplicate.source_account;
-      const targetAccount = sourceAccount === 1 ? 2 : 1;
-      const auth = getStoredAuthClient(targetAccount);
-      
-      // Find appropriate source/target calendar  
-      const sourceCals = allCalendars.filter(c => c.account_num === sourceAccount && c.sync_mode === 'bidirectional');
-      const targetCals = allCalendars.filter(c => c.account_num === targetAccount && c.sync_mode === 'bidirectional');
-      
-      if (!sourceCals.length || !targetCals.length) {
-        return res.status(400).json({ error: 'No bidirectional calendars configured for both accounts' });
+      const cals = getDuplicateCalendars(duplicate, allCalendars);
+      if (!cals) {
+        return res.status(400).json({ error: 'Could not work out which calendars this event was syncing between' });
       }
-      
-      const sourceCal = sourceCals[0];
-      const targetCal = targetCals[0];
-      
+      const { sourceCal, targetCal } = cals;
+      const auth = getStoredAuthClient(targetCal.account_num);
+
       const newEvent = prepareEventForSync(duplicate.source_event_data, sourceCal, allCalendars);
       const createdEvent = await createEvent(auth, targetCal.calendar_id, newEvent);
       
@@ -1107,14 +1169,11 @@ syncRouter.post('/duplicates/:id/resolve', async (req, res) => {
     } else if (action === 'link') {
       const sourceAccount = duplicate.source_account;
       const eventHash = createEventHash(duplicate.source_event_data);
-      
-      const sourceCals = allCalendars.filter(c => c.account_num === sourceAccount && c.sync_mode === 'bidirectional');
-      const targetAccount = sourceAccount === 1 ? 2 : 1;
-      const targetCals = allCalendars.filter(c => c.account_num === targetAccount && c.sync_mode === 'bidirectional');
-      
-      if (sourceCals.length && targetCals.length) {
+
+      const cals = getDuplicateCalendars(duplicate, allCalendars);
+      if (cals) {
         saveSyncedEvent(sourceAccount, duplicate.source_event_id, duplicate.existing_event_id,
-          sourceCals[0].calendar_id, targetCals[0].calendar_id, eventHash);
+          cals.sourceCal.calendar_id, cals.targetCal.calendar_id, eventHash);
       }
       
       deletePendingDuplicate(id);
@@ -1160,14 +1219,10 @@ syncRouter.post('/duplicates/batch', async (req, res) => {
       } else if (action === 'link') {
         const sourceAccount = duplicate.source_account;
         const eventHash = createEventHash(duplicate.source_event_data);
-        const allCals = getCalendars();
-        const sourceCals = allCals.filter(c => c.account_num === sourceAccount && c.sync_mode === 'bidirectional');
-        const targetAccount = sourceAccount === 1 ? 2 : 1;
-        const targetCals = allCals.filter(c => c.account_num === targetAccount && c.sync_mode === 'bidirectional');
-        
-        if (sourceCals.length && targetCals.length) {
+        const cals = getDuplicateCalendars(duplicate, getCalendars());
+        if (cals) {
           saveSyncedEvent(sourceAccount, duplicate.source_event_id, duplicate.existing_event_id,
-            sourceCals[0].calendar_id, targetCals[0].calendar_id, eventHash);
+            cals.sourceCal.calendar_id, cals.targetCal.calendar_id, eventHash);
         }
         deletePendingDuplicate(id);
         addSyncLog('duplicate_linked', sourceAccount, duplicate.source_event_data.summary, 'success', 'Batch linked');
@@ -1211,6 +1266,7 @@ syncRouter.get('/scan-duplicates', async (req, res) => {
       
       calendarResults.push({
         id: cal.id,
+        calendarId: cal.calendar_id,
         name: cal.calendar_name,
         accountNum: cal.account_num,
         duplicates: duplicates.map(d => ({

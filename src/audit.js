@@ -12,6 +12,7 @@ import { filterExcludedEvents, extractSyncMarker, findExistingDuplicate } from '
 import { notifyAuditIssues, notifyAuditClean } from './notify.js';
 import {
   getSyncConfig,
+  getRoutes,
   getEnabledCalendars,
   getSyncedEvent,
   deleteSyncedEvent,
@@ -35,6 +36,9 @@ async function fetchCalendarEvents(cal, auths) {
   let events;
   if (cal.source_type === 'ics') {
     events = await getEventsFromIcsUrl(cal.ics_url);
+    // Google calendars are fetched from 7 days ago; hold ICS feeds to the same window
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    events = events.filter(e => (e.end?.dateTime || e.end?.date || startOf(e)) >= cutoff);
   } else {
     ({ events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id));
   }
@@ -78,17 +82,19 @@ export async function runAudit({ repair = false } = {}) {
   const fetched = {};
   for (const cal of allCalendars) fetched[cal.id] = await fetchCalendarEvents(cal, auths);
 
-  // Same source -> target pairings performSync uses
-  const biDir = allCalendars.filter(c => c.sync_mode === 'bidirectional');
-  const oneWay = allCalendars.filter(c => c.sync_mode === 'one-way');
+  // Same source -> target pairings performSync runs: one entry per direction of each route
+  const calById = new Map(allCalendars.map(c => [c.id, c]));
   const pairs = [];
-  for (const a of biDir) {
-    for (const b of biDir) {
-      if (a.id !== b.id && a.account_num !== b.account_num) pairs.push([a, b, false]);
+  for (const route of getRoutes()) {
+    const a = calById.get(route.source_calendar_id);
+    const b = calById.get(route.target_calendar_id);
+    if (!a || !b || b.source_type === 'ics') continue;
+    if (route.bidirectional) {
+      if (a.source_type === 'ics' || a.account_num === b.account_num) continue;
+      pairs.push([a, b, false], [b, a, false]);
+    } else {
+      pairs.push([a, b, true]);
     }
-  }
-  for (const s of oneWay) {
-    for (const t of biDir) if (t.calendar_id !== s.calendar_id) pairs.push([s, t, true]);
   }
 
   const report = { checkedAt: new Date().toISOString(), lastSync: config?.last_sync || null, pairs: [], repaired: 0 };
