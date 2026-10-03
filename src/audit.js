@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getStoredAuthClient } from './auth.js';
 import { getEventsForSync } from './calendar.js';
 import { getEventsFromIcsUrl } from './ics-source.js';
-import { filterExcludedEvents, extractSyncMarker, findExistingDuplicate } from './sync.js';
+import { isPastEvent, filterExcludedEvents, extractSyncMarker, findExistingDuplicate } from './sync.js';
 import { notifyAuditIssues, notifyAuditClean } from './notify.js';
 import {
   getSyncConfig,
@@ -36,13 +36,10 @@ async function fetchCalendarEvents(cal, auths) {
   let events;
   if (cal.source_type === 'ics') {
     events = await getEventsFromIcsUrl(cal.ics_url);
-    // Google calendars are fetched from 7 days ago; hold ICS feeds to the same window
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    events = events.filter(e => (e.end?.dateTime || e.end?.date || startOf(e)) >= cutoff);
   } else {
     ({ events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id));
   }
-  const live = events.filter(e => e.status !== 'cancelled');
+  const live = events.filter(e => e.status !== 'cancelled' && !isPastEvent(e));
   const kept = filterExcludedEvents(live, cal.exclude_keywords);
   return { events: kept, excluded: live.length - kept.length };
 }

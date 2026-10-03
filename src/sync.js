@@ -340,6 +340,14 @@ function levenshteinSimilarity(str1, str2) {
   return 1 - (distance / maxLen);
 }
 
+// True once an event has ended (all-day end dates are exclusive, so ending today counts as past)
+export function isPastEvent(event) {
+  const now = new Date();
+  if (event.end?.dateTime || event.start?.dateTime) return new Date(event.end?.dateTime || event.start.dateTime) < now;
+  const endDate = event.end?.date || event.start?.date;
+  return !!endDate && endDate <= now.toISOString().split('T')[0];
+}
+
 // Get non-cancelled events from `otherEvents` that fall on the same calendar day as `event`
 function getSameDayEvents(event, otherEvents) {
   const startDate = (event.start?.dateTime || event.start?.date || '').split('T')[0];
@@ -1112,8 +1120,7 @@ syncRouter.post('/toggle', (req, res) => {
 
 // Get pending duplicates for review
 syncRouter.get('/duplicates', (req, res) => {
-  const duplicates = getPendingDuplicates();
-  res.json(duplicates);
+  res.json(getPendingDuplicates().filter(d => !isPastEvent(d.source_event_data)));
 });
 
 // Which calendars a held-back event was going between. Newer rows store them; older rows
@@ -1261,7 +1268,8 @@ syncRouter.get('/scan-duplicates', async (req, res) => {
     const calendarResults = [];
     
     for (const cal of googleCalendars) {
-      const { events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id);
+      const { events: allEvents } = await getEventsForSync(auths[cal.account_num], cal.calendar_id);
+      const events = allEvents.filter(e => !isPastEvent(e));
       const duplicates = findDuplicatesInCalendar(events, allCalendars);
       
       calendarResults.push({
