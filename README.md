@@ -132,6 +132,16 @@ Make sure:
 - Disconnect and reconnect the affected account
 - The app requests offline access, so refresh tokens should work automatically
 
+## Phone Agenda (one view of every calendar)
+
+`/agenda` is a phone-first, read-only view of every enabled calendar for the next two weeks. It never writes to Google.
+
+- Exact duplicates (same title and start once prefixes are stripped) collapse into one entry, with a chip for each calendar the event was on.
+- If `ANTHROPIC_API_KEY` is set, Claude groups events starting within 3 hours of each other that are the same real event despite different wording ("Dr. Smith" / "Doctor appointment"). Tap "✦ merged" on an event to see what was combined and why. Decisions are cached, so an unchanged calendar costs nothing to reload.
+- The data comes from `GET /api/agenda?days=14`, which accepts either a logged-in session or the ICS feed token (`?token=` or `Authorization: Bearer`). A home-screen widget can use this same endpoint.
+
+**Install on iPhone:** open `https://<your-app>/agenda?token=<ics token>` in Safari (the token is the one in your ICS feed URL), then tap Share → Add to Home Screen. The page remembers the token and keeps working offline with the last loaded agenda.
+
 ## Running with GitHub Actions (Recommended)
 
 You can run the sync as a scheduled GitHub Actions workflow instead of hosting a server. The workflow runs every 15 minutes (configurable) and persists state between runs via cache.

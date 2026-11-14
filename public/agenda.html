@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Agenda">
+  <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="/agenda-icon.png">
+  <link rel="manifest" href="/agenda.webmanifest">
+  <meta name="robots" content="noindex">
+  <title>Agenda</title>
+  <style>
+    :root {
+      --bg: #f6f5f2;
+      --surface: #ffffff;
+      --text: #1b1b1f;
+      --muted: #6e6e76;
+      --faint: #a3a3ab;
+      --line: rgba(0, 0, 0, 0.07);
+      --accent: #5b5bd6;
+      --accent-soft: rgba(91, 91, 214, 0.1);
+      --chip-l: 42%;
+      --chip-bg-a: 0.12;
+      --radius: 14px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121214;
+        --surface: #1c1c1f;
+        --text: #ededf0;
+        --muted: #9a9aa3;
+        --faint: #65656d;
+        --line: rgba(255, 255, 255, 0.08);
+        --accent: #9b9bf5;
+        --accent-soft: rgba(155, 155, 245, 0.14);
+        --chip-l: 72%;
+        --chip-bg-a: 0.18;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      -webkit-font-smoothing: antialiased;
+    }
+    main { max-width: 560px; margin: 0 auto; }
+
+    header { padding: 20px 2px 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+    .eyebrow { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0.02em; text-transform: uppercase; }
+    h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin-top: 2px; }
+    .refresh {
+      appearance: none; border: 0; background: var(--surface); color: var(--text);
+      width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+      box-shadow: 0 0 0 1px var(--line); cursor: pointer; flex: none;
+    }
+    .refresh svg { width: 18px; height: 18px; }
+    .refresh.spinning svg { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status { font-size: 13px; color: var(--muted); padding: 0 2px 14px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+    .status .ai { color: var(--accent); font-weight: 500; }
+    .status .warn { color: #c2410c; }
+
+    section.day { margin-top: 18px; }
+    .day-head {
+      position: sticky; top: 0; z-index: 2;
+      padding: calc(8px + env(safe-area-inset-top)) 2px 8px; margin-top: calc(-1 * env(safe-area-inset-top));
+      background: var(--bg);
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .day-head h2 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+    .day-head span { font-size: 14px; color: var(--muted); }
+
+    .card { background: var(--surface); border-radius: var(--radius); box-shadow: 0 0 0 1px var(--line); overflow: hidden; }
+    .event { display: grid; grid-template-columns: 74px 1fr; gap: 12px; padding: 12px 14px; position: relative; }
+    .event + .event { border-top: 1px solid var(--line); }
+    .event.past { opacity: 0.45; }
+    .event.now::before {
+      content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px;
+      border-radius: 0 3px 3px 0; background: var(--accent);
+    }
+    .time { font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 550; padding-top: 1px; }
+    .time small { display: block; font-size: 12px; color: var(--faint); font-weight: 400; }
+    .time.allday { color: var(--muted); font-weight: 500; font-size: 13px; }
+    .body { min-width: 0; }
+    .title { font-size: 16px; font-weight: 550; overflow-wrap: anywhere; }
+    .where { font-size: 13px; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+    .chip {
+      font-size: 11.5px; font-weight: 600; line-height: 1; padding: 4px 7px 4px 6px; border-radius: 999px;
+      display: inline-flex; align-items: center; gap: 5px;
+      color: hsl(var(--h) 55% var(--chip-l));
+      background: hsl(var(--h) 60% 50% / var(--chip-bg-a));
+    }
+    .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .chip.merge {
+      color: var(--accent); background: var(--accent-soft); border: 0; font: inherit; font-size: 11.5px; font-weight: 600;
+      cursor: pointer; padding: 4px 8px;
+    }
+    .chip.merge::before { content: none; }
+    .merged-detail { display: none; margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 13px; }
+    .event.open .merged-detail { display: block; }
+    .merged-detail p { color: var(--muted); margin-bottom: 6px; }
+    .merged-detail li { list-style: none; padding: 3px 0; display: flex; justify-content: space-between; gap: 10px; }
+    .merged-detail li span:last-child { color: var(--muted); white-space: nowrap; }
+
+    .empty, .message { text-align: center; color: var(--muted); padding: 48px 16px; font-size: 15px; }
+    .message h2 { color: var(--text); font-size: 18px; margin-bottom: 6px; }
+    .skeleton { height: 64px; border-radius: var(--radius); background: var(--surface); box-shadow: 0 0 0 1px var(--line); margin-top: 10px; opacity: 0.6; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow" id="eyebrow">All calendars</div>
+      <h1 id="today">Agenda</h1>
+    </div>
+    <button class="refresh" id="refresh" aria-label="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>
+    </button>
+  </header>
+  <div class="status" id="status"></div>
+  <div id="list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+</main>
+
+<script>
+(() => {
+  const STORE_TOKEN = 'agenda.token';
+  const STORE_DATA = 'agenda.last';
+  const DAYS = 14;
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+
+  const params = new URLSearchParams(location.search);
+  if (params.get('token')) store.set(STORE_TOKEN, params.get('token'));
+  const token = params.get('token') || store.get(STORE_TOKEN);
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // Same calendar name -> same color, every time.
+  const hue = name => { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const chip = name => `<span class="chip" style="--h:${hue(name)}">${esc(name)}</span>`;
+
+  // All-day dates ("2026-11-14") are calendar dates, not UTC instants.
+  const parse = (value, allDay) => {
+    if (allDay) { const [y, m, d] = value.split('-').map(Number); return new Date(y, m - 1, d); }
+    return new Date(value);
+  };
+  const dayKey = d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const fmtTime = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtShort = (v, allDay) => allDay ? 'All day' : fmtTime(parse(v, false));
+
+  function dayLabel(d) {
+    const diff = Math.round((startOfDay(d) - startOfDay(new Date())) / 86400000);
+    if (diff === 0) return ['Today', d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })];
+    if (diff === 1) return ['Tomorrow', d.toLocaleDateString([], { weekday: 'long' })];
+    return [d.toLocaleDateString([], { weekday: 'long' }), d.toLocaleDateString([], { month: 'short', day: 'numeric' })];
+  }
+
+  function minutesAgo(iso) {
+    const m = Math.round((Date.now() - new Date(iso)) / 60000);
+    return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
+  }
+
+  function render(data, { stale = false } = {}) {
+    const now = new Date();
+    $('today').textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    $('eyebrow').textContent = data.calendars?.length ? `${data.calendars.length} calendars, one view` : 'All calendars';
+
+    const bits = [`<span>Updated ${minutesAgo(data.generatedAt)}</span>`];
+    if (data.stats.mergedByAi) bits.push(`<span class="ai">✦ ${data.stats.mergedByAi} duplicate${data.stats.mergedByAi === 1 ? '' : 's'} merged by AI</span>`);
+    if (data.ai === 'off') bits.push('<span>AI merging off</span>');
+    if (data.ai === 'error') bits.push('<span class="warn">AI merging unavailable, showing exact matches only</span>');
+    if (stale) bits.push('<span class="warn">Offline, showing last saved</span>');
+    $('status').innerHTML = bits.join('');
+
+    // Bucket by local day; multi-day all-day events show on each day they cover (within range).
+    const days = new Map();
+    const horizon = startOfDay(new Date(now.getTime() + data.days * 86400000));
+    const today = startOfDay(now);
+    for (const ev of data.events) {
+      const s = parse(ev.start, ev.allDay);
+      const e = parse(ev.end, ev.allDay);
+      if (!ev.allDay && e < now && startOfDay(s) < today) continue;
+      let d = startOfDay(s < today && ev.allDay ? today : s);
+      const last = ev.allDay ? new Date(e.getTime() - 1) : s;
+      while (d <= last && d < horizon) {
+        if (d >= today) {
+          const k = dayKey(d);
+          if (!days.has(k)) days.set(k, { date: new Date(d), items: [] });
+          days.get(k).items.push(ev);
+        }
+        d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+        if (!ev.allDay) break;
+      }
+    }
+
+    if (!days.size) { $('list').innerHTML = '<div class="empty">Nothing on the calendar for the next two weeks.</div>'; return; }
+
+    const html = [...days.values()].sort((a, b) => a.date - b.date).map(({ date, items }) => {
+      items.sort((a, b) => (b.allDay - a.allDay) || (parse(a.start, a.allDay) - parse(b.start, b.allDay)));
+      const [title, sub] = dayLabel(date);
+      const rows = items.map(ev => {
+        const s = parse(ev.start, ev.allDay), e = parse(ev.end, ev.allDay);
+        const past = !ev.allDay && e < now;
+        const live = !ev.allDay && s <= now && e > now;
+        const time = ev.allDay
+          ? '<div class="time allday">All day</div>'
+          : `<div class="time">${esc(fmtTime(s))}<small>${esc(fmtTime(e))}</small></div>`;
+        const merged = ev.merged ? `
+          <button class="chip merge" data-toggle>✦ ${ev.merged.versions.length} merged</button>` : '';
+        const detail = ev.merged ? `
+          <div class="merged-detail">
+            <p>${esc(ev.merged.reason)}</p>
+            <ul>${ev.merged.versions.map(v => `<li><span>${esc(v.title)}</span><span>${esc(v.sources.join(', '))} · ${esc(fmtShort(v.start, ev.allDay))}</span></li>`).join('')}</ul>
+          </div>` : '';
+        return `<div class="event${past ? ' past' : ''}${live ? ' now' : ''}">
+          ${time}
+          <div class="body">
+            <div class="title">${esc(ev.title)}</div>
+            ${ev.location ? `<div class="where">${esc(ev.location)}</div>` : ''}
+            <div class="chips">${ev.sources.map(chip).join('')}${merged}</div>
+            ${detail}
+          </div>
+        </div>`;
+      }).join('');
+      return `<section class="day"><div class="day-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div><div class="card">${rows}</div></section>`;
+    }).join('');
+    $('list').innerHTML = html;
+  }
+
+  function showMessage(title, body) {
+    $('status').innerHTML = '';
+    $('list').innerHTML = `<div class="message"><h2>${esc(title)}</h2><p>${esc(body)}</p></div>`;
+  }
+
+  let loading = false;
+  async function load(force = false) {
+    if (loading) return;
+    loading = true;
+    $('refresh').classList.add('spinning');
+    try {
+      const qs = new URLSearchParams({ days: DAYS });
+      if (token) qs.set('token', token);
+      if (force) qs.set('refresh', '1');
+      const res = await fetch(`/api/agenda?${qs}`, { credentials: 'same-origin' });
+      if (res.status === 401) return showMessage('Link needs your key', 'Open this page using the agenda link from Calendar Sync (it includes your private token), then add it to your Home Screen.');
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const data = await res.json();
+      store.set(STORE_DATA, JSON.stringify(data));
+      render(data);
+    } catch (err) {
+      const saved = store.get(STORE_DATA);
+      if (saved) render(JSON.parse(saved), { stale: true });
+      else showMessage('Couldn’t load your calendars', err.message);
+    } finally {
+      loading = false;
+      $('refresh').classList.remove('spinning');
+    }
+  }
+
+  $('refresh').addEventListener('click', () => load(true));
+  $('list').addEventListener('click', e => {
+    const btn = e.target.closest('[data-toggle]');
+    if (btn) btn.closest('.event').classList.toggle('open');
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
+
+  const saved = store.get(STORE_DATA);
+  if (saved) { try { render(JSON.parse(saved), { stale: false }); } catch {} }
+  load();
+  setInterval(load, 5 * 60 * 1000);
+})();
+</script>
+</body>
+</html>

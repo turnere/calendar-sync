@@ -874,11 +874,91 @@ export function generateICS(events, calendarName) {
   return lines.join('\r\n') + '\r\n';
 }
 
+// Start/end of a Google-style event ({dateTime} or {date}) in epoch ms
+function eventBoundMs(event, boundary) {
+  const point = event?.[boundary];
+  const value = point?.dateTime || point?.date;
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return isNaN(ms) ? null : ms;
+}
+
+// External RV rental platforms (Outdoorsy, RVshare, RVezy - anything configured as an
+// "ics" source calendar) each name the same real booking completely differently, so the
+// usual title+time dedup below never catches them. Since the RV can only be booked once
+// at a time, any ICS-sourced events whose date ranges overlap must be the same real
+// booking - collapse them into a single event instead of publishing one fluff copy per
+// platform.
+function mergeOverlappingIcsEvents(events) {
+  const parent = events.map((_, i) => i);
+  const find = i => {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+    return i;
+  };
+  const union = (a, b) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+
+  for (let i = 0; i < events.length; i++) {
+    const startI = eventBoundMs(events[i], 'start');
+    const endI = eventBoundMs(events[i], 'end') ?? startI;
+    if (startI == null) continue;
+    for (let j = i + 1; j < events.length; j++) {
+      const startJ = eventBoundMs(events[j], 'start');
+      const endJ = eventBoundMs(events[j], 'end') ?? startJ;
+      if (startJ == null) continue;
+      if (startI < endJ && startJ < endI) union(i, j);
+    }
+  }
+
+  const groups = new Map();
+  events.forEach((event, i) => {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(event);
+  });
+
+  const merged = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      merged.push(group[0]);
+      continue;
+    }
+
+    // Deterministic ordering so the same real booking always resolves to the same
+    // representative title/UID across refreshes, regardless of source fetch order.
+    const sorted = [...group].sort((a, b) =>
+      (a._calendarName || '').localeCompare(b._calendarName || '') || String(a.id).localeCompare(String(b.id)));
+    const representative = [...sorted].sort((a, b) => (b.summary || '').length - (a.summary || '').length)[0];
+    const otherSources = [...new Set(sorted.filter(e => e !== representative).map(e => e._calendarName).filter(Boolean))];
+
+    const startMs = Math.min(...sorted.map(e => eventBoundMs(e, 'start')).filter(ms => ms != null));
+    const endMs = Math.max(...sorted.map(e => eventBoundMs(e, 'end') ?? eventBoundMs(e, 'start')).filter(ms => ms != null));
+    const isAllDay = !!representative.start?.date;
+
+    const description = otherSources.length
+      ? `${representative.description || ''}${representative.description ? '\n\n' : ''}Also booked via: ${otherSources.join(', ')}`
+      : representative.description;
+
+    merged.push({
+      ...representative,
+      id: 'rv-merge-' + crypto.createHash('md5').update(sorted.map(e => e.id).join('|')).digest('hex'),
+      start: isAllDay ? { date: new Date(startMs).toISOString().split('T')[0] } : { dateTime: new Date(startMs).toISOString() },
+      end: isAllDay ? { date: new Date(endMs).toISOString().split('T')[0] } : { dateTime: new Date(endMs).toISOString() },
+      description
+    });
+  }
+
+  return merged;
+}
+
 // Fetch all events from all calendars, deduplicate, return combined list
 export async function getCombinedEvents() {
   const allCalendars = getEnabledCalendars();
   if (allCalendars.length === 0) return { events: [], calendars: allCalendars };
-  
+
   const accountNums = [...new Set(allCalendars.filter(c => c.source_type !== 'ics').map(c => c.account_num))];
   const auths = {};
   for (const acct of accountNums) {
@@ -888,6 +968,7 @@ export async function getCombinedEvents() {
 
   // Fetch all events
   const allEvents = [];
+  const icsEvents = [];
   for (const cal of allCalendars) {
     let events;
     if (cal.source_type === 'ics') {
@@ -905,10 +986,15 @@ export async function getCombinedEvents() {
       if (event.status === 'cancelled') continue;
       event._calendarName = cal.calendar_name;
       event._calendarPrefix = cal.prefix;
-      allEvents.push(event);
+      if (cal.source_type === 'ics') {
+        icsEvents.push(event);
+      } else {
+        allEvents.push(event);
+      }
     }
   }
-  
+  allEvents.push(...mergeOverlappingIcsEvents(icsEvents));
+
   // Deduplicate: group by original title + start time, keep one per group
   const { prefixes, suffixes } = getAllAffixes(allCalendars);
   const seen = new Map();
@@ -923,7 +1009,15 @@ export async function getCombinedEvents() {
     const key = `${stripped.toLowerCase()}|${startTime}`;
     
     if (!seen.has(key)) {
+      event._cleanTitle = stripped.trim();
+      event._sources = event._calendarName ? [event._calendarName] : [];
       seen.set(key, event);
+    } else {
+      // Remember every calendar this event appeared on (used by the agenda view)
+      const kept = seen.get(key);
+      if (event._calendarName && !kept._sources.includes(event._calendarName)) {
+        kept._sources.push(event._calendarName);
+      }
     }
     // Keep the first occurrence (already has a prefix identifying the source)
   }

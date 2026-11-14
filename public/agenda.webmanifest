@@ -1,0 +1,11 @@
+{
+  "name": "Agenda",
+  "short_name": "Agenda",
+  "description": "All your calendars in one view, duplicates merged.",
+  "display": "standalone",
+  "background_color": "#f6f5f2",
+  "theme_color": "#5b5bd6",
+  "icons": [
+    { "src": "/agenda-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

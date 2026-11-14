@@ -7,6 +7,7 @@ import { authRouter, getAuthClient } from './auth.js';
 import { calendarRouter } from './calendar.js';
 import { syncRouter, startSyncScheduler } from './sync.js';
 import { auditRouter, startAuditScheduler } from './audit.js';
+import { agendaRouter } from './agenda.js';
 import { initDatabase, getAccountInfo, getTokens, getSyncConfig } from './database.js';
 import { isConfigured as isHabiticaConfigured } from './notify.js';
 
@@ -26,6 +27,11 @@ const requireLogin = (req, res, next) => {
   // Allow health checks, login page, and ICS feed without session auth
   // (ICS feed uses its own token-based auth)
   if (req.path === '/health' || req.path === '/login' || req.path === '/api/sync/ics') return next();
+
+  // Phone agenda: the page and its icons hold no data, and /api/agenda checks
+  // the same token as the ICS feed (or a logged-in session) itself.
+  const agendaPaths = ['/agenda', '/agenda.html', '/api/agenda', '/agenda.webmanifest', '/agenda-icon.png'];
+  if (agendaPaths.includes(req.path)) return next();
   
   if (req.session.authenticated) {
     return next();
@@ -164,6 +170,8 @@ app.use('/auth', authRouter);
 app.use('/api/calendars', calendarRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api/audit', auditRouter);
+app.use('/api/agenda', agendaRouter);
+app.get('/agenda', (req, res) => res.sendFile(join(__dirname, '../public/agenda.html')));
 
 // Status endpoint
 app.get('/api/status', (req, res) => {
