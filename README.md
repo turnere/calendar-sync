@@ -146,6 +146,7 @@ Make sure:
 1. Install Scriptable and put `Agenda.js` in its iCloud Drive folder (or paste it into a new script named "Agenda").
 2. Run it once in Scriptable and paste your token when asked. Running it again lets you preview each size or change the token.
 3. Add a Scriptable widget to the home or lock screen, long-press it → Edit Widget → Script: **Agenda**.
+4. Optional frosted-glass look: take a screenshot of an empty home-screen page, run Agenda in Scriptable → **Frosted wallpaper background…**, and pick the screenshot, widget size, position and light/dark tone. The widget then uses a blurred, frosted crop of the wallpaper behind it. With several widgets of one size, set each widget's Parameter to the name it shows (e.g. `medium top`).
 
 ## Running with GitHub Actions (Recommended)
 

@@ -98,17 +98,140 @@ function buildDays(events, now, maxDays) {
 // ---------- look: black & white, frosted ----------
 
 const dyn = (light, dark) => Color.dynamic(light, dark);
-const C = {
-  text: dyn(new Color('#000000'), new Color('#ffffff')),
-  secondary: dyn(new Color('#000000', 0.55), new Color('#ffffff', 0.6)),
-  tertiary: dyn(new Color('#000000', 0.35), new Color('#ffffff', 0.38)),
-  block: dyn(new Color('#000000', 0.06), new Color('#ffffff', 0.12)),
-  blockNow: dyn(new Color('#000000', 0.13), new Color('#ffffff', 0.22)),
-  bar: dyn(new Color('#000000'), new Color('#ffffff')),
+// tone: 'auto' follows the phone's appearance; 'light'/'dark' are fixed, used
+// when the widget sits on a frosted wallpaper crop of a known tone.
+function palette(tone) {
+  const pick = (light, dark) => tone === 'light' ? light : tone === 'dark' ? dark : dyn(light, dark);
+  return {
+    text: pick(new Color('#000000'), new Color('#ffffff')),
+    secondary: pick(new Color('#000000', 0.6), new Color('#ffffff', 0.68)),
+    tertiary: pick(new Color('#000000', 0.42), new Color('#ffffff', 0.48)),
+    // On frosted glass, blocks are brighter panes; on the plain panel, faint grey tints.
+    block: tone === 'auto' ? dyn(new Color('#000000', 0.06), new Color('#ffffff', 0.12))
+      : tone === 'light' ? new Color('#ffffff', 0.45) : new Color('#ffffff', 0.14),
+    blockNow: tone === 'auto' ? dyn(new Color('#000000', 0.13), new Color('#ffffff', 0.22))
+      : tone === 'light' ? new Color('#ffffff', 0.7) : new Color('#ffffff', 0.26),
+    bar: pick(new Color('#000000'), new Color('#ffffff')),
+  };
+}
+let C = palette('auto');
+
+// ---------- frosted wallpaper ("glass") ----------
+// A widget can't see the wallpaper, so we fake it: crop the widget's spot out
+// of a screenshot of an empty home-screen page, blur it heavily and frost it.
+
+const GLASS_SETTINGS = 'agenda-glass.json';
+// Widget slots measured on a 1179×2556 screenshot (iPhone 15/16 Pro), scaled
+// to the actual screenshot. The heavy blur hides small differences between models.
+const REF = { W: 1179, H: 2556, small: 474, medium: 1017, largeH: 1062, left: 82, right: 622, top: 270, middle: 858, bottom: 1446 };
+const SLOTS = {
+  small: ['top left', 'top right', 'middle left', 'middle right', 'bottom left', 'bottom right'],
+  medium: ['top', 'middle', 'bottom'],
+  large: ['top', 'bottom'],
 };
 
-// Frosted panel: soft diagonal sheen with a brighter top edge, like light
-// catching glass. iOS doesn't let Scriptable blur the wallpaper itself.
+function glassFiles() {
+  const fm = FileManager.local();
+  const dir = fm.documentsDirectory();
+  const settingsPath = fm.joinPath(dir, GLASS_SETTINGS);
+  const settings = fm.fileExists(settingsPath) ? JSON.parse(fm.readString(settingsPath)) : { defaults: {}, tones: {} };
+  return {
+    fm, settings,
+    image: key => fm.joinPath(dir, `agenda-glass-${key.replace(/\s+/g, '-')}.png`),
+    save: () => fm.writeString(settingsPath, JSON.stringify(settings)),
+  };
+}
+
+function slotRect(img, family, slot) {
+  const s = img.size.width / REF.W, v = img.size.height / REF.H;
+  const col = /right/.test(slot) ? REF.right : REF.left;
+  const row = /bottom/.test(slot) ? (family === 'large' ? REF.middle : REF.bottom) : /middle/.test(slot) ? REF.middle : REF.top;
+  const w = family === 'small' ? REF.small : REF.medium;
+  const h = family === 'large' ? REF.largeH : REF.small;
+  return new Rect(col * s, row * v, w * s, h * s);
+}
+
+function frost(img, rect, tone) {
+  const draw = (size, fn) => { const c = new DrawContext(); c.size = size; c.opaque = true; c.respectScreenScale = false; fn(c); return c.getImage(); };
+  const full = new Size(Math.round(rect.width), Math.round(rect.height));
+  const crop = draw(full, c => c.drawImageAtPoint(img, new Point(-rect.x, -rect.y)));
+  // Shrink then enlarge twice: smooth scaling turns into a soft blur.
+  let blurred = crop;
+  for (const f of [10, 4]) {
+    const tiny = draw(new Size(Math.max(1, Math.round(full.width / f)), Math.max(1, Math.round(full.height / f))), c => c.drawImageInRect(blurred, new Rect(0, 0, full.width / f, full.height / f)));
+    blurred = draw(full, c => c.drawImageInRect(tiny, new Rect(0, 0, full.width, full.height)));
+  }
+  return draw(full, c => {
+    c.drawImageInRect(blurred, new Rect(0, 0, full.width, full.height));
+    c.setFillColor(tone === 'light' ? new Color('#ffffff', 0.42) : new Color('#000000', 0.38));
+    c.fillRect(new Rect(0, 0, full.width, full.height));
+  });
+}
+
+async function chooseFrom(title, message, options) {
+  const a = new Alert();
+  a.title = title;
+  if (message) a.message = message;
+  options.forEach(o => a.addAction(o));
+  a.addCancelAction('Cancel');
+  const i = await a.presentSheet();
+  return i < 0 ? null : options[i];
+}
+
+async function setUpGlass() {
+  const intro = new Alert();
+  intro.title = 'Frosted wallpaper background';
+  intro.message = 'First take a screenshot of an empty home-screen page: long-press the home screen, swipe left past your last page so it is empty, then take the screenshot. Then pick it here.';
+  intro.addAction('Pick screenshot');
+  intro.addCancelAction('Cancel');
+  if ((await intro.presentAlert()) === -1) return;
+  const img = await Photos.fromLibrary();
+  const family = await chooseFrom('Widget size', null, ['small', 'medium', 'large']);
+  if (!family) return;
+  const slot = await chooseFrom('Where is the widget?', `Position of the ${family} widget on your home screen`, SLOTS[family]);
+  if (!slot) return;
+  const toneLabel = await chooseFrom('Glass tone', 'Light: white frosting, black text. Dark: smoky frosting, white text.', ['Light', 'Dark']);
+  if (!toneLabel) return;
+  const tone = toneLabel.toLowerCase();
+
+  const g = glassFiles();
+  const key = `${family} ${slot}`;
+  g.fm.writeImage(g.image(key), frost(img, slotRect(img, family, slot), tone));
+  g.settings.tones[key] = tone;
+  g.settings.defaults[family] = key;
+  g.save();
+
+  const done = new Alert();
+  done.title = 'Glass background saved';
+  done.message = `Your ${family} widgets now use it. If you have more than one ${family} widget, long-press the widget → Edit Widget → Parameter and type:\n\n${key}`;
+  done.addAction('OK');
+  await done.presentAlert();
+}
+
+async function removeGlass() {
+  const g = glassFiles();
+  const keys = Object.keys(g.settings.tones);
+  if (!keys.length) { const a = new Alert(); a.title = 'No glass backgrounds set'; a.addAction('OK'); await a.presentAlert(); return; }
+  const key = await chooseFrom('Remove glass background', null, [...keys, 'All of them']);
+  if (!key) return;
+  for (const k of key === 'All of them' ? keys : [key]) {
+    if (g.fm.fileExists(g.image(k))) g.fm.remove(g.image(k));
+    delete g.settings.tones[k];
+    for (const f of Object.keys(g.settings.defaults)) if (g.settings.defaults[f] === k) delete g.settings.defaults[f];
+  }
+  g.save();
+}
+
+// Returns the tone used, or null if this widget has no glass background.
+function applyGlass(w, family, parameter) {
+  const g = glassFiles();
+  const key = (parameter || '').trim().toLowerCase() || g.settings.defaults[family];
+  if (!key || !g.settings.tones[key] || !g.fm.fileExists(g.image(key))) return null;
+  w.backgroundImage = g.fm.readImage(g.image(key));
+  return g.settings.tones[key];
+}
+
+// Default panel when no glass is set: soft diagonal sheen with a brighter top edge.
 function glass(w) {
   const g = new LinearGradient();
   g.colors = [
@@ -308,9 +431,14 @@ function lockScreen(w, days, now) {
   text(w, next.title, { size: 14, weight: 'bold', lines: 2 });
 }
 
-function render(w, family, result, now) {
+function render(w, family, result, now, parameter) {
   const isLock = family.startsWith('accessory');
-  if (!isLock) { glass(w); w.setPadding(PAD, PAD, PAD - 2, PAD); }
+  if (!isLock) {
+    const tone = applyGlass(w, family, parameter);
+    C = palette(tone || 'auto');
+    if (!tone) glass(w);
+    w.setPadding(PAD, PAD, PAD - 2, PAD);
+  }
   if (result.error) {
     text(w, result.error, { size: isLock ? 12 : 13, color: isLock ? Color.white() : C.secondary, lines: 4 });
     return;
@@ -333,19 +461,25 @@ if (config.runsInWidget) {
   const w = new ListWidget();
   w.url = `${BASE_URL}/agenda`;
   w.refreshAfterDate = new Date(now.getTime() + REFRESH_MINUTES * 60000);
-  render(w, family, result, now);
+  render(w, family, result, now, args.widgetParameter);
   Script.setWidget(w);
 } else {
-  // In the app: preview each size, or change the token.
+  // In the app: preview each size, set up the glass background, or change the token.
   const menu = new Alert();
   menu.title = 'Agenda widget';
   menu.addAction('Preview small');
   menu.addAction('Preview medium');
   menu.addAction('Preview large');
+  menu.addAction('Frosted wallpaper background…');
+  menu.addAction('Remove frosted background…');
   menu.addAction('Change token');
   menu.addCancelAction('Done');
   const pick = await menu.presentSheet();
   if (pick === 3) {
+    await setUpGlass();
+  } else if (pick === 4) {
+    await removeGlass();
+  } else if (pick === 5) {
     await getToken({ ask: true });
   } else if (pick >= 0) {
     const fam = ['small', 'medium', 'large'][pick];
