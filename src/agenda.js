@@ -125,9 +125,10 @@ export async function buildAgenda(days = 14) {
   items = markWeddings(applyGroups(items, ai.groups), weddingCals);
   items.sort((a, b) => startMs(a) - startMs(b));
 
-  // The next few weddings even beyond the requested range, so the page and
-  // widget can always show what's coming up.
-  const horizon = now + 180 * 24 * 60 * 60 * 1000;
+  // The next few weddings even beyond the requested range, for the page's
+  // "Next wedding" bar and the widget's strip. Only within a month: anything
+  // further out isn't worth a reminder yet.
+  const horizon = now + 31 * 24 * 60 * 60 * 1000;
   const seenWedding = new Set();
   const upcomingWeddings = markWeddings(events.map(toItem), weddingCals)
     .filter(item => item.wedding && new Date(item.end).getTime() > now && startMs(item) < horizon)
