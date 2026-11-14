@@ -1,5 +1,6 @@
 // Agenda widget for Scriptable (iOS). Shows the de-duplicated agenda from
-// Calendar Sync's /api/agenda as a home-screen or lock-screen widget.
+// Calendar Sync's /api/agenda as a home-screen or lock-screen widget, styled
+// after Apple's Calendar "Up Next" widget, in black and white.
 //
 // Setup: put this script in Scriptable, run it once in the app and paste the
 // ICS token when asked (stored in the iOS Keychain, never in this file).
@@ -59,15 +60,21 @@ function parse(value, allDay) {
   if (allDay) { const [y, m, d] = value.split('-').map(Number); return new Date(y, m - 1, d); }
   return new Date(value);
 }
-function fmtTime(d) {
-  const f = new DateFormatter();
-  f.useNoDateStyle(); f.useShortTimeStyle();
-  return f.string(d);
-}
 function fmt(d, pattern) { const f = new DateFormatter(); f.dateFormat = pattern; return f.string(d); }
-function dayTitle(d, now) {
+// Apple-style ranges: "7–8PM", "11AM–12PM", "9:15–10:15PM".
+function clock(d, withPeriod) {
+  const h = d.getHours() % 12 || 12, m = d.getMinutes();
+  return `${h}${m ? ':' + String(m).padStart(2, '0') : ''}${withPeriod ? (d.getHours() < 12 ? 'AM' : 'PM') : ''}`;
+}
+function timeRange(s, e) {
+  const samePeriod = (s.getHours() < 12) === (e.getHours() < 12);
+  return `${clock(s, !samePeriod)}–${clock(e, true)}`;
+}
+function dayLabel(d, now) {
   const diff = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
-  return diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : fmt(d, 'EEEE');
+  if (diff === 0) return 'LATER TODAY';
+  if (diff === 1) return 'TOMORROW';
+  return fmt(d, 'EEEE, MMM d').toUpperCase();
 }
 
 // Group into days: timed events not yet over, plus all-day events covering that day.
@@ -83,158 +90,253 @@ function buildDays(events, now, maxDays) {
       else if (s >= day && s < next && e > now) timed.push({ ...ev, s, e });
     }
     timed.sort((a, b) => a.s - b.s);
-    if (allDay.length || timed.length) days.push({ day, allDay, timed });
+    days.push({ day, allDay, timed });
   }
   return days;
 }
 
-// ---------- look ----------
+// ---------- look: black & white, frosted ----------
 
+const dyn = (light, dark) => Color.dynamic(light, dark);
 const C = {
-  bg: Color.dynamic(new Color('#f6f5f2'), new Color('#121214')),
-  text: Color.dynamic(new Color('#1b1b1f'), new Color('#ededf0')),
-  muted: Color.dynamic(new Color('#6e6e76'), new Color('#9a9aa3')),
-  faint: Color.dynamic(new Color('#a3a3ab'), new Color('#65656d')),
-  accent: Color.dynamic(new Color('#5b5bd6'), new Color('#9b9bf5')),
+  text: dyn(new Color('#000000'), new Color('#ffffff')),
+  secondary: dyn(new Color('#000000', 0.55), new Color('#ffffff', 0.6)),
+  tertiary: dyn(new Color('#000000', 0.35), new Color('#ffffff', 0.38)),
+  block: dyn(new Color('#000000', 0.06), new Color('#ffffff', 0.12)),
+  blockNow: dyn(new Color('#000000', 0.13), new Color('#ffffff', 0.22)),
+  bar: dyn(new Color('#000000'), new Color('#ffffff')),
 };
 
-// Same calendar name -> same hue as the web page.
-function hue(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
-function hslHex(h, s, l) {
-  s /= 100; l /= 100;
-  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
-  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))).toString(16).padStart(2, '0');
-  return `#${f(0)}${f(8)}${f(4)}`;
-}
-function calColor(ev) {
-  const h = hue(ev.sources?.[0] || '');
-  return Color.dynamic(new Color(hslHex(h, 55, 45)), new Color(hslHex(h, 60, 68)));
+// Frosted panel: soft diagonal sheen with a brighter top edge, like light
+// catching glass. iOS doesn't let Scriptable blur the wallpaper itself.
+function glass(w) {
+  const g = new LinearGradient();
+  g.colors = [
+    dyn(new Color('#ffffff'), new Color('#3a3a3d')),
+    dyn(new Color('#f3f3f5'), new Color('#232325')),
+    dyn(new Color('#e9e9ec'), new Color('#161618')),
+  ];
+  g.locations = [0, 0.45, 1];
+  g.startPoint = new Point(0, 0);
+  g.endPoint = new Point(0.7, 1);
+  w.backgroundGradient = g;
 }
 
+function font(weight, size) {
+  return {
+    light: Font.lightSystemFont, regular: Font.regularSystemFont, medium: Font.mediumSystemFont,
+    semibold: Font.semiboldSystemFont, bold: Font.boldSystemFont, heavy: Font.heavySystemFont,
+  }[weight](size);
+}
 function text(stack, value, { size = 13, weight = 'regular', color = C.text, lines = 1 } = {}) {
   const t = stack.addText(value);
-  t.font = weight === 'bold' ? Font.boldSystemFont(size)
-    : weight === 'semibold' ? Font.semiboldSystemFont(size)
-    : weight === 'medium' ? Font.mediumSystemFont(size) : Font.systemFont(size);
+  t.font = font(weight, size);
   t.textColor = color;
   t.lineLimit = lines;
   return t;
 }
 
-function eventRow(parent, ev, now, { size = 13 } = {}) {
-  const row = parent.addStack();
-  row.centerAlignContent();
-  row.spacing = 6;
-  const bar = row.addStack();
-  bar.size = new Size(3, size + 6);
-  bar.cornerRadius = 1.5;
-  bar.backgroundColor = calColor(ev);
+// Widget sizes in points for the current phone, so blocks can fill their column.
+function widgetWidth(family) {
+  const sw = Device.screenSize().width;
+  const small = sw >= 428 ? 170 : sw >= 414 ? 169 : sw >= 390 ? 158 : sw >= 375 ? 155 : 141;
+  const gap = sw >= 414 ? 24 : sw >= 390 ? 22 : 20;
+  return family === 'small' ? small : small * 2 + gap;
+}
+const PAD = 15;
+
+// One event, Apple style: tinted rounded block, bar on the left, title + time.
+function eventBlock(parent, ev, now, width, { location = true, titleLines = 1 } = {}) {
   const live = ev.s <= now && ev.e > now;
-  const time = text(row, live ? 'Now' : fmtTime(ev.s), { size: size - 1, weight: 'medium', color: live ? C.accent : C.muted });
-  time.font = Font.mediumMonospacedSystemFont(size - 1.5);
-  text(row, ev.title, { size, weight: 'semibold' });
-  row.addSpacer();
+  const lines = 1 + titleLines + (location && ev.location ? 1 : 0);
+  const height = 6 + 15 + (lines - 1) * 13.5;
+
+  const block = parent.addStack();
+  block.size = new Size(width, height);
+  block.cornerRadius = 6;
+  block.backgroundColor = live ? C.blockNow : C.block;
+  block.setPadding(3, 4, 3, 6);
+  block.centerAlignContent();
+
+  const bar = block.addStack();
+  bar.size = new Size(3, height - 6);
+  bar.cornerRadius = 1.5;
+  bar.backgroundColor = C.bar;
+  block.addSpacer(6);
+
+  const body = block.addStack();
+  body.layoutVertically();
+  text(body, ev.title, { size: 13, weight: 'semibold', lines: titleLines });
+  if (location && ev.location) text(body, ev.location, { size: 11.5, color: C.secondary });
+  text(body, live ? `Now · until ${clock(ev.e, true)}` : timeRange(ev.s, ev.e), { size: 11.5, weight: live ? 'semibold' : 'regular', color: C.secondary });
+  block.addSpacer();
+  return height;
 }
 
-function allDayLine(parent, list, { size = 11 } = {}) {
-  if (!list.length) return;
-  const extra = list.length > 1 ? `  +${list.length - 1}` : '';
-  text(parent, `All day · ${list[0].title}${extra}`, { size, color: C.faint });
+function allDayText(parent, list, { size = 11.5 } = {}) {
+  if (!list.length) return 0;
+  const extra = list.length > 1 ? ` +${list.length - 1}` : '';
+  text(parent, `${list[0].title}${extra}`, { size, color: C.tertiary });
+  return 15;
+}
+
+function dateHeader(parent, now, stale, { big = 34 } = {}) {
+  const row = parent.addStack();
+  row.centerAlignContent();
+  text(row, fmt(now, 'EEEE').toUpperCase(), { size: 11.5, weight: 'bold' });
+  if (stale) { row.addSpacer(6); text(row, 'OFFLINE', { size: 9.5, weight: 'semibold', color: C.tertiary }); }
+  row.addSpacer();
+  text(parent, String(now.getDate()), { size: big, weight: 'light' });
+}
+
+const EMPTY_TODAY = 'No more events today';
+
+// Fills a column top-down within a height budget so nothing gets clipped.
+// Each day: label, then event blocks, then a quiet all-day line.
+function upcoming(col, days, now, width, budget, { skipFirstTimed = 0 } = {}) {
+  const LABEL = 17, GAP = 4, DAY_GAP = 6;
+  let used = 0, first = true, shown = 0;
+  days.forEach(({ day, timed, label }, i) => {
+    const events = i === 0 ? timed.slice(skipFirstTimed) : timed;
+    if (!events.length) return;
+    const firstH = 6 + 15 + 13.5;
+    if (used + (first ? 0 : DAY_GAP) + LABEL + firstH > budget) { used = budget + 1; return; }
+    if (!first) { col.addSpacer(DAY_GAP); used += DAY_GAP; }
+    first = false;
+    text(col, label || dayLabel(day, now), { size: 10.5, weight: 'semibold', color: C.secondary });
+    col.addSpacer(3);
+    used += LABEL;
+    for (const ev of events) {
+      const h = 6 + 15 + 13.5 + (ev.location ? 13.5 : 0);
+      if (used + h > budget) {
+        if (used + firstH <= budget) { used += eventBlock(col, ev, now, width, { location: false }) + GAP; col.addSpacer(GAP); shown++; }
+        used = budget + 1;
+        return;
+      }
+      used += eventBlock(col, ev, now, width) + GAP;
+      col.addSpacer(GAP);
+      shown++;
+    }
+  });
+  return shown;
 }
 
 // ---------- layouts ----------
 
-function header(w, now, stale) {
-  const top = w.addStack();
-  top.centerAlignContent();
-  text(top, fmt(now, 'EEE d').toUpperCase(), { size: 11, weight: 'bold', color: C.accent });
-  top.addSpacer();
-  if (stale) text(top, 'offline', { size: 10, color: C.faint });
-}
-
 function small(w, days, now, stale) {
-  header(w, now, stale);
-  w.addSpacer(6);
-  const next = days.flatMap(d => d.timed)[0];
-  if (!next) {
-    text(w, 'Nothing else this week', { size: 14, weight: 'semibold', lines: 2 });
+  const inner = widgetWidth('small') - PAD * 2;
+  dateHeader(w, now, stale, { big: 30 });
+  w.addSpacer(4);
+  const today = days[0];
+  if (today.timed.length) {
+    eventBlock(w, today.timed[0], now, inner, { location: false, titleLines: 2 });
+    if (today.timed.length > 1) { w.addSpacer(4); text(w, `+${today.timed.length - 1} more today`, { size: 11, color: C.tertiary }); }
   } else {
-    const label = startOfDay(next.s) > startOfDay(now) ? `${dayTitle(next.s, now)} ${fmtTime(next.s)}` : (next.s <= now ? 'Now' : fmtTime(next.s));
-    text(w, label, { size: 12, weight: 'semibold', color: calColor(next) });
-    text(w, next.title, { size: 15, weight: 'bold', lines: 3 });
-    if (next.location) text(w, next.location, { size: 11, color: C.muted });
+    allDayText(w, today.allDay);
+    const next = days.slice(1).find(d => d.timed.length);
+    if (next) {
+      w.addSpacer(3);
+      text(w, dayLabel(next.day, now), { size: 10, weight: 'semibold', color: C.secondary });
+      w.addSpacer(2);
+      eventBlock(w, next.timed[0], now, inner, { location: false });
+    } else {
+      text(w, EMPTY_TODAY, { size: 12, color: C.secondary, lines: 2 });
+    }
   }
   w.addSpacer();
-  const todayCount = days[0] && startOfDay(days[0].day).getTime() === startOfDay(now).getTime() ? days[0].timed.length : 0;
-  if (todayCount > 1) text(w, `+${todayCount - 1} more today`, { size: 11, color: C.muted });
-  else if (days[0]?.allDay.length) allDayLine(w, days[0].allDay);
 }
 
-// Fills the widget top-down within a height budget (points, below the header),
-// so nothing gets clipped: a day title is only shown if one item fits under it.
-const H = { dayTitle: 18, event: 22, allDay: 15, dayGap: 5 };
-function list(w, days, now, stale, budget) {
-  header(w, now, stale);
-  w.addSpacer(6);
-  let used = 0, first = true;
-  for (const { day, allDay, timed } of days) {
-    const gap = first ? 0 : H.dayGap;
-    const firstItem = timed.length ? H.event : H.allDay;
-    if (used + gap + H.dayTitle + firstItem > budget) break;
-    if (!first) w.addSpacer(H.dayGap);
-    used += gap + H.dayTitle;
-    first = false;
-    text(w, dayTitle(day, now), { size: 12, weight: 'bold', color: C.muted });
-    w.addSpacer(3);
-    for (const ev of timed) {
-      if (used + H.event > budget) break;
-      eventRow(w, ev, now);
-      w.addSpacer(3);
-      used += H.event;
-    }
-    if (allDay.length && used + H.allDay <= budget) { allDayLine(w, allDay); used += H.allDay; }
+function medium(w, days, now, stale) {
+  const width = widgetWidth('medium');
+  const colW = (width - PAD * 2 - 14) / 2;
+  const row = w.addStack();
+  row.topAlignContent();
+
+  // Left: date and today's next events.
+  const left = row.addStack();
+  left.layoutVertically();
+  left.size = new Size(colW, 0);
+  dateHeader(left, now, stale, { big: 36 });
+  left.addSpacer(2);
+  const today = days[0];
+  let onLeft = 0;
+  if (today.allDay.length) { allDayText(left, today.allDay); left.addSpacer(3); }
+  const leftBudget = today.allDay.length ? 52 : 68;
+  let used = 0;
+  for (const ev of today.timed) {
+    const h = 6 + 15 + 13.5;
+    if (used + h > leftBudget) break;
+    used += eventBlock(left, ev, now, colW, { location: false }) + 4;
+    left.addSpacer(4);
+    onLeft++;
   }
-  if (!days.length) text(w, 'Nothing on the calendar this week', { size: 13, color: C.muted });
+  if (!today.timed.length && !today.allDay.length) text(left, EMPTY_TODAY, { size: 12, color: C.secondary, lines: 2 });
+  left.addSpacer();
+
+  row.addSpacer(14);
+
+  // Right: what comes after.
+  const right = row.addStack();
+  right.layoutVertically();
+  right.size = new Size(colW, 0);
+  const shown = upcoming(right, days, now, colW, 128, { skipFirstTimed: onLeft });
+  if (!shown) text(right, 'Nothing else this week', { size: 12, color: C.secondary, lines: 2 });
+  right.addSpacer();
+}
+
+function large(w, days, now, stale) {
+  const inner = widgetWidth('medium') - PAD * 2;
+  dateHeader(w, now, stale, { big: 38 });
+  const allDayH = allDayText(w, days[0].allDay);
+  w.addSpacer(8);
+  const list = w.addStack();
+  list.layoutVertically();
+  // The large widget lists today too, so it reads "TODAY" rather than "LATER TODAY".
+  const shown = upcoming(list, [{ ...days[0], label: 'TODAY' }, ...days.slice(1)], now, inner, 262 - allDayH);
+  if (!shown) text(list, 'Nothing on the calendar this week', { size: 13, color: C.secondary });
   w.addSpacer();
 }
 
 function lockScreen(w, days, now) {
   const next = days.flatMap(d => d.timed)[0];
   if (!next) { text(w, 'No more events', { size: 13 }); return; }
-  const when = next.s <= now ? `Now · until ${fmtTime(next.e)}`
-    : startOfDay(next.s) > startOfDay(now) ? `${dayTitle(next.s, now)} ${fmtTime(next.s)}` : fmtTime(next.s);
+  const diff = Math.round((startOfDay(next.s) - startOfDay(now)) / 86400000);
+  const when = next.s <= now ? `Now · until ${clock(next.e, true)}`
+    : diff === 0 ? timeRange(next.s, next.e)
+    : `${diff === 1 ? 'Tomorrow' : fmt(next.s, 'EEE')} ${clock(next.s, true)}`;
   text(w, when, { size: 12, weight: 'semibold' });
   text(w, next.title, { size: 14, weight: 'bold', lines: 2 });
+}
+
+function render(w, family, result, now) {
+  const isLock = family.startsWith('accessory');
+  if (!isLock) { glass(w); w.setPadding(PAD, PAD, PAD - 2, PAD); }
+  if (result.error) {
+    text(w, result.error, { size: isLock ? 12 : 13, color: isLock ? Color.white() : C.secondary, lines: 4 });
+    return;
+  }
+  const days = buildDays(result.data.events, now, 7);
+  if (isLock) lockScreen(w, days, now);
+  else if (family === 'small') small(w, days, now, result.stale);
+  else if (family === 'medium') medium(w, days, now, result.stale);
+  else large(w, days, now, result.stale);
 }
 
 // ---------- main ----------
 
 const now = new Date();
-const family = config.widgetFamily || 'large';
-const w = new ListWidget();
-w.url = `${BASE_URL}/agenda`;
-w.refreshAfterDate = new Date(now.getTime() + REFRESH_MINUTES * 60000);
-
-const isLock = family.startsWith('accessory');
-if (!isLock) { w.backgroundColor = C.bg; w.setPadding(14, 14, 12, 14); }
-
 const token = await getToken({ ask: false });
 const result = token ? await loadAgenda(token) : { error: 'Open Scriptable and run "Agenda" once to add your token.' };
 
-if (result.error) {
-  text(w, result.error, { size: isLock ? 12 : 13, color: isLock ? Color.white() : C.muted, lines: 4 });
-} else {
-  const days = buildDays(result.data.events, now, 7);
-  if (family === 'accessoryRectangular' || family === 'accessoryInline' || family === 'accessoryCircular') lockScreen(w, days, now);
-  else if (family === 'small') small(w, days, now, result.stale);
-  else if (family === 'medium') list(w, days, now, result.stale, 100);
-  else list(w, days, now, result.stale, family === 'extraLarge' ? 300 : 290);
-}
-
 if (config.runsInWidget) {
+  const family = config.widgetFamily || 'medium';
+  const w = new ListWidget();
+  w.url = `${BASE_URL}/agenda`;
+  w.refreshAfterDate = new Date(now.getTime() + REFRESH_MINUTES * 60000);
+  render(w, family, result, now);
   Script.setWidget(w);
 } else {
-  // In the app: preview, with a way to change the token.
+  // In the app: preview each size, or change the token.
   const menu = new Alert();
   menu.title = 'Agenda widget';
   menu.addAction('Preview small');
@@ -243,19 +345,12 @@ if (config.runsInWidget) {
   menu.addAction('Change token');
   menu.addCancelAction('Done');
   const pick = await menu.presentSheet();
-  if (pick === 3) { await getToken({ ask: true }); }
-  else if (pick >= 0) {
+  if (pick === 3) {
+    await getToken({ ask: true });
+  } else if (pick >= 0) {
     const fam = ['small', 'medium', 'large'][pick];
     const preview = new ListWidget();
-    preview.backgroundColor = C.bg;
-    preview.setPadding(14, 14, 12, 14);
-    if (result.data) {
-      const days = buildDays(result.data.events, now, 7);
-      if (fam === 'small') small(preview, days, now, result.stale);
-      else list(preview, days, now, result.stale, fam === 'medium' ? 100 : 290);
-    } else {
-      text(preview, result.error || 'No data', { size: 13, color: C.muted, lines: 4 });
-    }
+    render(preview, fam, result, now);
     if (fam === 'small') await preview.presentSmall();
     else if (fam === 'medium') await preview.presentMedium();
     else await preview.presentLarge();
