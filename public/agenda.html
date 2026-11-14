@@ -114,12 +114,14 @@
     /* All-day events: one quiet line each, above the day's timed events */
     .alldays { padding: 0 2px 8px; display: grid; gap: 2px; }
     .allday {
-      display: flex; align-items: baseline; gap: 7px; min-width: 0;
+      display: grid; grid-template-columns: 6px 1fr; column-gap: 7px; align-items: start;
       font-size: 13.5px; color: var(--muted); line-height: 1.35;
     }
-    .allday .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; transform: translateY(-1px); background: hsl(var(--h) 55% var(--chip-l)); }
-    .allday .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-    .allday .meta { color: var(--faint); white-space: nowrap; flex: none; font-size: 12.5px; }
+    .allday .dot { width: 6px; height: 6px; border-radius: 50%; margin-top: 0.5em; background: hsl(var(--h) 55% var(--chip-l)); }
+    /* Name first, then "until …" and calendars inline after it, clamped to two
+       lines: a long name wraps, and the calendar names are what gets cut. */
+    .allday .text { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+    .allday .meta { color: var(--faint); font-size: 12.5px; margin-left: 4px; }
     .allday .ai { color: var(--accent); }
 
     .empty, .message { text-align: center; color: var(--muted); padding: 48px 16px; font-size: 15px; }
@@ -235,8 +237,7 @@
         const tip = ev.merged ? ` title="${esc(ev.merged.reason)}"` : '';
         return `<div class="allday"${tip}>
           <span class="dot" style="--h:${hue(ev.sources[0] || '')}"></span>
-          <span class="t">${ev.merged ? '<span class="ai">✦</span> ' : ''}${esc(ev.title)}</span>
-          <span class="meta">${esc(meta)}</span>
+          <div class="text"><span class="t">${ev.merged ? '<span class="ai">✦</span> ' : ''}${esc(ev.title)}</span><span class="meta">${esc(meta)}</span></div>
         </div>`;
       }).join('');
       const timed = items.filter(ev => !ev.allDay).sort((a, b) => parse(a.start, false) - parse(b.start, false));
