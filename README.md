@@ -142,6 +142,11 @@ Make sure:
 
 **Install on iPhone:** open `https://<your-app>/agenda?token=<ics token>` in Safari (the token is the one in your ICS feed URL), then tap Share → Add to Home Screen. The page remembers the token and keeps working offline with the last loaded agenda.
 
+**Home-screen / lock-screen widget:** [`widget/Agenda.js`](widget/Agenda.js) is a script for the free [Scriptable](https://scriptable.app) app. It reads `/api/agenda` with the ICS token, which it stores in the iOS Keychain, and supports small, medium, large and lock-screen widgets. Tapping the widget opens `/agenda`.
+1. Install Scriptable and put `Agenda.js` in its iCloud Drive folder (or paste it into a new script named "Agenda").
+2. Run it once in Scriptable and paste your token when asked. Running it again lets you preview each size or change the token.
+3. Add a Scriptable widget to the home or lock screen, long-press it → Edit Widget → Script: **Agenda**.
+
 ## Running with GitHub Actions (Recommended)
 
 You can run the sync as a scheduled GitHub Actions workflow instead of hosting a server. The workflow runs every 15 minutes (configurable) and persists state between runs via cache.
