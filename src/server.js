@@ -171,7 +171,11 @@ app.use('/api/calendars', calendarRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api/audit', auditRouter);
 app.use('/api/agenda', agendaRouter);
-app.get('/agenda', (req, res) => res.sendFile(join(__dirname, '../public/agenda.html')));
+// no-store so a home-screen web app always gets the latest page, not a stale copy.
+app.get('/agenda', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(join(__dirname, '../public/agenda.html'), { cacheControl: false, etag: false, lastModified: false });
+});
 
 // Status endpoint
 app.get('/api/status', (req, res) => {

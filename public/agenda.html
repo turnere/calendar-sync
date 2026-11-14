@@ -178,6 +178,13 @@
 
   const params = new URLSearchParams(location.search);
   if (params.get('token')) store.set(STORE_TOKEN, params.get('token'));
+  // Arrived via the refresh button: fetch past the server cache, then tidy the URL.
+  const hardRefresh = params.has('fresh');
+  if (hardRefresh) {
+    const u = new URL(location.href);
+    u.searchParams.delete('fresh');
+    history.replaceState(null, '', u.toString());
+  }
   const token = params.get('token') || store.get(STORE_TOKEN);
 
   const $ = id => document.getElementById(id);
@@ -330,7 +337,16 @@
     }
   }
 
-  $('refresh').addEventListener('click', () => load(true));
+  // Hard refresh: reload the page itself from the server (home-screen web apps
+  // tend to keep a stale copy) and fetch fresh data past the server's cache.
+  // Offline, a page reload would show Safari's error page, so just retry data.
+  $('refresh').addEventListener('click', () => {
+    if (!navigator.onLine) return load(true);
+    $('refresh').classList.add('spinning');
+    const u = new URL(location.href);
+    u.searchParams.set('fresh', Date.now());
+    location.replace(u.toString());
+  });
   $('more-btn').addEventListener('click', async () => {
     if (loading) return;
     const btn = $('more-btn');
@@ -351,7 +367,7 @@
 
   const saved = store.get(STORE_DATA);
   if (saved) { try { render(JSON.parse(saved), { stale: false }); } catch {} }
-  load();
+  load(hardRefresh);
   setInterval(load, 5 * 60 * 1000);
 })();
 </script>
