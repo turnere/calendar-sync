@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { getCombinedEvents } from './sync.js';
 import { getIcsToken } from './database.js';
-import { NEAR_MS, startMs, toItem, findCandidates, applyGroups } from './agenda-merge.js';
+import { NEAR_MS, startMs, toItem, findCandidates, applyGroups, weddingCalendarNames, markWeddings } from './agenda-merge.js';
 
 // Read-only, de-duplicated agenda across every enabled calendar, for the phone
 // view (public/agenda.html) and any home-screen widget. Nothing is written back
@@ -121,14 +121,33 @@ export async function buildAgenda(days = 14) {
   const exactDuplicatesRemoved = items.reduce((n, item) => n + item.sources.length - 1, 0);
   const candidates = findCandidates(items);
   const ai = candidates.length >= 2 ? await askClaudeForGroups(candidates) : { status: getClient() ? 'ok' : 'off', groups: [] };
-  items = applyGroups(items, ai.groups);
+  const weddingCals = weddingCalendarNames(calendars, process.env.AGENDA_WEDDING_CALENDARS);
+  items = markWeddings(applyGroups(items, ai.groups), weddingCals);
   items.sort((a, b) => startMs(a) - startMs(b));
+
+  // The next few weddings even beyond the requested range, so the page and
+  // widget can always show what's coming up.
+  const horizon = now + 180 * 24 * 60 * 60 * 1000;
+  const seenWedding = new Set();
+  const upcomingWeddings = markWeddings(events.map(toItem), weddingCals)
+    .filter(item => item.wedding && new Date(item.end).getTime() > now && startMs(item) < horizon)
+    .sort((a, b) => startMs(a) - startMs(b))
+    .filter(item => {
+      const key = `${item.title.toLowerCase()}|${item.start}`;
+      if (seenWedding.has(key)) return false;
+      seenWedding.add(key);
+      return true;
+    })
+    .slice(0, 3)
+    .map(({ title, start, end, allDay, location }) => ({ title, start, end, allDay, location }));
 
   return {
     generatedAt: new Date(now).toISOString(),
     days,
     ai: ai.status,
     calendars: calendars.map(c => c.calendar_name).filter(Boolean),
+    weddingCalendars: [...weddingCals],
+    upcomingWeddings,
     stats: {
       shown: items.length,
       mergedByAi: items.filter(i => i.merged).length,

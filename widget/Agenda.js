@@ -83,14 +83,18 @@ function buildDays(events, now, maxDays) {
   const days = [];
   for (let i = 0; i < maxDays; i++) {
     const day = addDays(today, i), next = addDays(today, i + 1);
-    const allDay = [], timed = [];
+    const allDay = [], timed = [], weddings = [];
     for (const ev of events) {
       const s = parse(ev.start, ev.allDay), e = parse(ev.end, ev.allDay);
-      if (ev.allDay) { if (s < next && e > day) allDay.push(ev); }
-      else if (s >= day && s < next && e > now) timed.push({ ...ev, s, e });
+      const covers = ev.allDay ? s < next && e > day : s >= day && s < next && e > now;
+      if (!covers) continue;
+      // Weddings get their own bold block, whether all-day or timed.
+      if (ev.wedding) weddings.push({ ...ev, s, e });
+      else if (ev.allDay) allDay.push(ev);
+      else timed.push({ ...ev, s, e });
     }
     timed.sort((a, b) => a.s - b.s);
-    days.push({ day, allDay, timed });
+    days.push({ day, allDay, timed, weddings });
   }
   return days;
 }
@@ -116,6 +120,10 @@ function palette(tone) {
     allDay: tone === 'auto' ? dyn(new Color('#000000', 0.025), new Color('#ffffff', 0.05))
       : tone === 'light' ? new Color('#ffffff', 0.22) : new Color('#ffffff', 0.06),
     allDayEdge: pick(new Color('#000000', 0.09), new Color('#ffffff', 0.12)),
+    // Weddings: solid inverted block (black on light, white on dark).
+    wed: pick(new Color('#000000'), new Color('#ffffff')),
+    wedText: pick(new Color('#ffffff'), new Color('#000000')),
+    wedMuted: pick(new Color('#ffffff', 0.7), new Color('#000000', 0.62)),
   };
 }
 let C = palette('auto');
@@ -330,26 +338,71 @@ function dateHeader(parent, now, stale, { big = 34 } = {}) {
 
 const EMPTY_TODAY = 'No more events today';
 
+// Wedding: the one thing that should jump out. Solid inverted block with a
+// "WEDDING" label, even for all-day events.
+const WED_H = 42;
+function weddingBlock(parent, ev, width, { titleLines = 1 } = {}) {
+  const height = WED_H + (titleLines - 1) * 16;
+  const block = parent.addStack();
+  block.size = new Size(width, height);
+  block.cornerRadius = 7;
+  block.backgroundColor = C.wed;
+  block.setPadding(0, 9, 0, 8);
+  block.centerAlignContent();
+  const body = block.addStack();
+  body.layoutVertically();
+  const when = ev.allDay ? 'ALL DAY' : timeRange(ev.s, ev.e);
+  text(body, `♥ WEDDING · ${when}`, { size: 9.5, weight: 'bold', color: C.wedMuted });
+  body.addSpacer(1);
+  text(body, ev.title, { size: 13.5, weight: 'bold', color: C.wedText, lines: titleLines });
+  block.addSpacer();
+  return height;
+}
+
+// Footer strip on the large widget for the next wedding beyond the visible week.
+function nextWeddingStrip(parent, wedding, now, width) {
+  const s = parse(wedding.start, wedding.allDay);
+  const n = Math.round((startOfDay(s) - startOfDay(now)) / 86400000);
+  const strip = parent.addStack();
+  strip.size = new Size(width, 24);
+  strip.cornerRadius = 6;
+  strip.backgroundColor = C.wed;
+  strip.setPadding(0, 9, 0, 9);
+  strip.centerAlignContent();
+  text(strip, '♥ NEXT WEDDING', { size: 9.5, weight: 'bold', color: C.wedMuted });
+  strip.addSpacer(6);
+  text(strip, wedding.title, { size: 12, weight: 'bold', color: C.wedText });
+  strip.addSpacer();
+  text(strip, `${fmt(s, 'MMM d')} · ${n < 14 ? `${n}d` : `${Math.round(n / 7)}w`}`, { size: 11, weight: 'semibold', color: C.wedMuted });
+}
+
 // Fills a column top-down within a height budget so nothing gets clipped.
 // Each day: label, then the all-day box, then event blocks. Days with only
 // all-day events still appear. Today's all-day box can be skipped when the
 // layout already shows it next to the date.
-function upcoming(col, days, now, width, budget, { skipFirstTimed = 0, skipFirstAllDay = false } = {}) {
+function upcoming(col, days, now, width, budget, { skipFirstTimed = 0, skipFirstAllDay = false, skipFirstWeddings = false } = {}) {
   const LABEL = 17, GAP = 4, DAY_GAP = 6, BLOCK = 6 + 15 + 13.5;
   let used = 0, first = true, shown = 0, full = false;
-  days.forEach(({ day, timed, allDay, label }, i) => {
+  days.forEach(({ day, timed, allDay, weddings, label }, i) => {
     if (full) return;
     const events = i === 0 ? timed.slice(skipFirstTimed) : timed;
     const allDays = i === 0 && skipFirstAllDay ? [] : allDay;
-    if (!events.length && !allDays.length) return;
-    const firstH = allDays.length ? PILL_H : BLOCK;
+    const weds = i === 0 && skipFirstWeddings ? [] : weddings;
+    if (!events.length && !allDays.length && !weds.length) return;
+    const firstH = weds.length ? WED_H : allDays.length ? PILL_H : BLOCK;
     if (used + (first ? 0 : DAY_GAP) + LABEL + firstH > budget) { full = true; return; }
     if (!first) { col.addSpacer(DAY_GAP); used += DAY_GAP; }
     first = false;
     text(col, label || dayLabel(day, now), { size: 10.5, weight: 'semibold', color: C.secondary });
     col.addSpacer(3);
     used += LABEL;
-    if (allDays.length) {
+    for (const ev of weds) {
+      if (used + WED_H > budget) { full = true; return; }
+      used += weddingBlock(col, ev, width) + GAP;
+      col.addSpacer(GAP);
+      shown++;
+    }
+    if (allDays.length && used + PILL_H <= budget) {
       used += allDayPill(col, allDays, width) + GAP;
       col.addSpacer(GAP);
       shown++;
@@ -376,18 +429,27 @@ function small(w, days, now, stale) {
   dateHeader(w, now, stale, { big: 30 });
   w.addSpacer(4);
   const today = days[0];
+  if (today.weddings.length) {
+    // A wedding today takes the small widget over.
+    weddingBlock(w, today.weddings[0], inner, { titleLines: 2 });
+    const rest = today.timed.length + today.allDay.length + today.weddings.length - 1;
+    if (rest) { w.addSpacer(4); text(w, `+${rest} more today`, { size: 11, color: C.tertiary }); }
+    w.addSpacer();
+    return;
+  }
   if (today.allDay.length) { allDayPill(w, today.allDay, inner); w.addSpacer(4); }
   if (today.timed.length) {
     // With an all-day box above, the title gets one line so both fit.
     eventBlock(w, today.timed[0], now, inner, { location: false, titleLines: today.allDay.length ? 1 : 2 });
     if (today.timed.length > 1) { w.addSpacer(4); text(w, `+${today.timed.length - 1} more today`, { size: 11, color: C.tertiary }); }
   } else {
-    const next = days.slice(1).find(d => d.timed.length || d.allDay.length);
+    const next = days.slice(1).find(d => d.timed.length || d.allDay.length || d.weddings.length);
     if (next) {
       if (!today.allDay.length) w.addSpacer(2);
       text(w, dayLabel(next.day, now), { size: 10, weight: 'semibold', color: C.secondary });
       w.addSpacer(2);
-      if (next.timed.length) eventBlock(w, next.timed[0], now, inner, { location: false });
+      if (next.weddings.length) weddingBlock(w, next.weddings[0], inner, { titleLines: 2 });
+      else if (next.timed.length) eventBlock(w, next.timed[0], now, inner, { location: false });
       else allDayPill(w, next.allDay, inner);
     } else if (!today.allDay.length) {
       text(w, EMPTY_TODAY, { size: 12, color: C.secondary, lines: 2 });
@@ -410,8 +472,11 @@ function medium(w, days, now, stale) {
   left.addSpacer(2);
   const today = days[0];
   let onLeft = 0;
-  if (today.allDay.length) { allDayPill(left, today.allDay, colW); left.addSpacer(4); }
-  const leftBudget = today.allDay.length ? 44 : 68;
+  let leftBudget = 68;
+  // Today's wedding goes right under the date (one fits; more spill to the right).
+  let wedsOnLeft = 0;
+  if (today.weddings.length) { weddingBlock(left, today.weddings[0], colW); left.addSpacer(4); leftBudget -= WED_H + 4; wedsOnLeft = 1; }
+  if (today.allDay.length && leftBudget >= PILL_H + 4) { allDayPill(left, today.allDay, colW); left.addSpacer(4); leftBudget -= PILL_H + 4; }
   let used = 0;
   for (const ev of today.timed) {
     const h = 6 + 15 + 13.5;
@@ -420,7 +485,7 @@ function medium(w, days, now, stale) {
     left.addSpacer(4);
     onLeft++;
   }
-  if (!today.timed.length && !today.allDay.length) text(left, EMPTY_TODAY, { size: 12, color: C.secondary, lines: 2 });
+  if (!today.timed.length && !today.allDay.length && !today.weddings.length) text(left, EMPTY_TODAY, { size: 12, color: C.secondary, lines: 2 });
   left.addSpacer();
 
   row.addSpacer(14);
@@ -429,23 +494,28 @@ function medium(w, days, now, stale) {
   const right = row.addStack();
   right.layoutVertically();
   right.size = new Size(colW, 0);
-  const shown = upcoming(right, days, now, colW, 128, { skipFirstTimed: onLeft, skipFirstAllDay: true });
+  const rightDays = [{ ...days[0], weddings: days[0].weddings.slice(wedsOnLeft) }, ...days.slice(1)];
+  const shown = upcoming(right, rightDays, now, colW, 128, { skipFirstTimed: onLeft, skipFirstAllDay: true });
   if (!shown) text(right, 'Nothing else this week', { size: 12, color: C.secondary, lines: 2 });
   right.addSpacer();
 }
 
-function large(w, days, now, stale) {
+function large(w, days, now, stale, upcomingWeddings = []) {
   const inner = widgetWidth('medium') - PAD * 2;
   dateHeader(w, now, stale, { big: 38 });
   w.addSpacer(2);
   const allDayH = allDayPill(w, days[0].allDay, inner);
   w.addSpacer(8);
+  // Next wedding past the visible week gets a strip at the bottom.
+  const lastDay = days[days.length - 1].day;
+  const later = upcomingWeddings.find(x => startOfDay(parse(x.start, x.allDay)) > lastDay);
   const list = w.addStack();
   list.layoutVertically();
   // The large widget lists today too, so it reads "TODAY" rather than "LATER TODAY".
-  const shown = upcoming(list, [{ ...days[0], label: 'TODAY' }, ...days.slice(1)], now, inner, 246 - allDayH, { skipFirstAllDay: true });
+  const shown = upcoming(list, [{ ...days[0], label: 'TODAY' }, ...days.slice(1)], now, inner, 246 - allDayH - (later ? 30 : 0), { skipFirstAllDay: true });
   if (!shown) text(list, 'Nothing on the calendar this week', { size: 13, color: C.secondary });
   w.addSpacer();
+  if (later) nextWeddingStrip(w, later, now, inner);
 }
 
 function lockScreen(w, days, now) {
@@ -475,7 +545,7 @@ function render(w, family, result, now, parameter) {
   if (isLock) lockScreen(w, days, now);
   else if (family === 'small') small(w, days, now, result.stale);
   else if (family === 'medium') medium(w, days, now, result.stale);
-  else large(w, days, now, result.stale);
+  else large(w, days, now, result.stale, result.data.upcomingWeddings);
 }
 
 // ---------- main ----------

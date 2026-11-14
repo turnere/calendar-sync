@@ -140,6 +140,8 @@ Make sure:
 - If `ANTHROPIC_API_KEY` is set, Claude groups events starting within 3 hours of each other that are the same real event despite different wording ("Dr. Smith" / "Doctor appointment"). Tap "✦ merged" on an event to see what was combined and why. Decisions are cached, so an unchanged calendar costs nothing to reload.
 - The data comes from `GET /api/agenda?days=14`, which accepts either a logged-in session or the ICS feed token (`?token=` or `Authorization: Bearer`). A home-screen widget can use this same endpoint.
 
+- **Weddings** stand out: any event on a calendar named like "HoneyBook" or "Wedding" (or one that tags synced copies with "Wedding") gets a bold card on the page and an inverted block in the widget, plus a "Next wedding" countdown. To pick the calendars yourself, set `AGENDA_WEDDING_CALENDARS` (comma-separated name fragments) on the server; `/api/agenda` lists the matches in `weddingCalendars`.
+
 **Install on iPhone:** open `https://<your-app>/agenda?token=<ics token>` in Safari (the token is the one in your ICS feed URL), then tap Share → Add to Home Screen. The page remembers the token and keeps working offline with the last loaded agenda.
 
 **Home-screen / lock-screen widget:** [`widget/Agenda.js`](widget/Agenda.js) is a script for the free [Scriptable](https://scriptable.app) app. It reads `/api/agenda` with the ICS token, which it stores in the iOS Keychain, and supports small, medium, large and lock-screen widgets. Tapping the widget opens `/agenda`.

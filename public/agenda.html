@@ -22,6 +22,10 @@
       --faint: #a3a3ab;
       --line: rgba(0, 0, 0, 0.07);
       --soft: rgba(255, 255, 255, 0.45);
+      --wed-bg: #1b1b1f;
+      --wed-fg: #ffffff;
+      --wed-muted: rgba(255, 255, 255, 0.68);
+      --wed-accent: #dcc08a;
       --accent: #5b5bd6;
       --accent-soft: rgba(91, 91, 214, 0.1);
       --chip-l: 42%;
@@ -37,6 +41,10 @@
         --faint: #65656d;
         --line: rgba(255, 255, 255, 0.08);
         --soft: rgba(255, 255, 255, 0.035);
+        --wed-bg: #f4f0e8;
+        --wed-fg: #1b1b1f;
+        --wed-muted: rgba(27, 27, 31, 0.62);
+        --wed-accent: #8a6a2c;
         --accent: #9b9bf5;
         --accent-soft: rgba(155, 155, 245, 0.14);
         --chip-l: 72%;
@@ -139,6 +147,35 @@
     }
     .more button:disabled { color: var(--faint); cursor: default; }
 
+    /* Weddings: inverted ink card with a champagne label, impossible to miss */
+    .wedding {
+      background: var(--wed-bg); color: var(--wed-fg); border-radius: var(--radius);
+      padding: 14px 16px 15px; margin-bottom: 10px; position: relative; overflow: hidden;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    }
+    .wedding::after {
+      content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--wed-accent);
+    }
+    .w-label {
+      display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--wed-accent);
+    }
+    .w-label svg { width: 22px; height: 14px; flex: none; }
+    .w-label .when { color: var(--wed-muted); font-weight: 600; letter-spacing: 0.02em; }
+    .w-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; margin-top: 6px; overflow-wrap: anywhere; }
+    .w-meta { font-size: 13px; color: var(--wed-muted); margin-top: 4px; }
+
+    .next-wedding {
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      appearance: none; border: 0; font: inherit; cursor: pointer; margin: 0 0 6px;
+      background: var(--wed-bg); color: var(--wed-fg); border-radius: 12px; padding: 10px 14px;
+    }
+    .next-wedding svg { width: 22px; height: 14px; color: var(--wed-accent); flex: none; }
+    .next-wedding .nw-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.3; }
+    .next-wedding .nw-text b { font-weight: 700; }
+    .next-wedding .nw-when { display: block; font-size: 12.5px; color: var(--wed-muted); }
+    .next-wedding .nw-in { font-size: 13px; font-weight: 700; color: var(--wed-accent); white-space: nowrap; }
+
     .empty, .message { text-align: center; color: var(--muted); padding: 48px 16px; font-size: 15px; }
     .message h2 { color: var(--text); font-size: 18px; margin-bottom: 6px; }
     .skeleton { height: 64px; border-radius: var(--radius); background: var(--surface); box-shadow: 0 0 0 1px var(--line); margin-top: 10px; opacity: 0.6; }
@@ -156,6 +193,7 @@
     </button>
   </header>
   <div class="status" id="status"></div>
+  <div id="next-wedding"></div>
   <div id="list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
   <div class="more" id="more" hidden>
     <p id="more-range"></p>
@@ -211,6 +249,7 @@
     return [d.toLocaleDateString([], { weekday: 'long' }), d.toLocaleDateString([], { month: 'short', day: 'numeric' })];
   }
 
+  const RINGS = '<svg viewBox="0 0 22 14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="7" cy="7" r="5.2"/><circle cx="15" cy="7" r="5.2"/></svg>';
   const diffDays = d => Math.round((startOfDay(d) - startOfDay(new Date())) / 86400000);
 
   function minutesAgo(iso) {
@@ -229,6 +268,22 @@
     if (data.ai === 'error') bits.push('<span class="warn">AI merging unavailable, showing exact matches only</span>');
     if (stale) bits.push('<span class="warn">Offline, showing last saved</span>');
     $('status').innerHTML = bits.join('');
+
+    // Next wedding, even if it's beyond the loaded range. Tapping it loads far
+    // enough ahead and scrolls to it. Hidden when it's today (the card is right there).
+    const nw = (data.upcomingWeddings || [])[0];
+    const nwDate = nw && parse(nw.start, nw.allDay);
+    if (nw && diffDays(nwDate) > 0) {
+      const n = diffDays(nwDate);
+      const inText = n === 1 ? 'Tomorrow' : n < 14 ? `in ${n} days` : `in ${Math.round(n / 7)} weeks`;
+      const when = nwDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+        + (nw.allDay ? '' : ` · ${fmtTime(nwDate)}`);
+      $('next-wedding').innerHTML = `<button class="next-wedding" data-days="${n + 1}">
+        ${RINGS}<span class="nw-text">Next wedding: <b>${esc(nw.title)}</b><span class="nw-when">${esc(when)}</span></span>
+        <span class="nw-in">${esc(inText)}</span></button>`;
+    } else {
+      $('next-wedding').innerHTML = '';
+    }
 
     // Bucket by local day; multi-day all-day events show on each day they cover (within range).
     const days = new Map();
@@ -264,7 +319,17 @@
 
     const html = [...days.values()].sort((a, b) => a.date - b.date).map(({ date, items }) => {
       const [title, sub] = dayLabel(date);
-      const allDays = items.filter(ev => ev.allDay).map(ev => {
+      const weddings = items.filter(ev => ev.wedding).map(ev => {
+        const s = parse(ev.start, ev.allDay), e = parse(ev.end, ev.allDay);
+        const when = ev.allDay ? 'All day' : `${fmtTime(s)} – ${fmtTime(e)}`;
+        const meta = [ev.location, ev.sources.join(', ')].filter(Boolean).join(' · ');
+        return `<div class="wedding" id="w-${esc(dayKey(date))}">
+          <div class="w-label">${RINGS}<span>Wedding</span><span class="when">· ${esc(when)}</span></div>
+          <div class="w-title">${esc(ev.title)}</div>
+          ${meta ? `<div class="w-meta">${esc(meta)}</div>` : ''}
+        </div>`;
+      }).join('');
+      const allDays = items.filter(ev => ev.allDay && !ev.wedding).map(ev => {
         // Multi-day: "until Wed" on every day but the last.
         const lastDay = new Date(parse(ev.end, true).getTime() - 86400000);
         const until = lastDay > date
@@ -277,7 +342,7 @@
           <div class="text"><span class="t">${ev.merged ? '<span class="ai">✦</span> ' : ''}${esc(ev.title)}</span><span class="meta">${esc(meta)}</span></div>
         </div>`;
       }).join('');
-      const timed = items.filter(ev => !ev.allDay).sort((a, b) => parse(a.start, false) - parse(b.start, false));
+      const timed = items.filter(ev => !ev.allDay && !ev.wedding).sort((a, b) => parse(a.start, false) - parse(b.start, false));
       const rows = timed.map(ev => {
         const s = parse(ev.start, ev.allDay), e = parse(ev.end, ev.allDay);
         const past = !ev.allDay && e < now;
@@ -302,7 +367,7 @@
           </div>
         </div>`;
       }).join('');
-      return `<section class="day"><div class="day-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>${allDays ? `<div class="alldays">${allDays}</div>` : ''}${rows ? `<div class="card">${rows}</div>` : ''}</section>`;
+      return `<section class="day"><div class="day-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>${weddings}${allDays ? `<div class="alldays">${allDays}</div>` : ''}${rows ? `<div class="card">${rows}</div>` : ''}</section>`;
     }).join('');
     $('list').innerHTML = html;
   }
@@ -358,6 +423,15 @@
     await load();
     window.scrollTo(0, y); // stay where you were; new days appear below
     if (!navigator.onLine) days = prev;
+  });
+  // "Next wedding" banner: load far enough ahead to include it, then scroll there.
+  $('next-wedding').addEventListener('click', async e => {
+    const b = e.target.closest('.next-wedding');
+    if (!b || loading) return;
+    const need = Math.min(Math.ceil(Number(b.dataset.days) / STEP_DAYS) * STEP_DAYS, MAX_DAYS);
+    if (need > days) { days = need; await load(); }
+    const card = document.querySelector('.wedding');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
   $('list').addEventListener('click', e => {
     const btn = e.target.closest('[data-toggle]');

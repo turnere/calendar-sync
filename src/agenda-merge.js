@@ -17,8 +17,29 @@ export function toItem(event) {
     allDay,
     location: event.location || null,
     sources: event._sources?.length ? [...event._sources] : [event._calendarName].filter(Boolean),
+    // Synced copies of wedding-calendar events carry a " Wedding" suffix.
+    taggedWedding: /\bwedding\s*$/i.test((event.summary || '').trim()),
     merged: null
   };
+}
+
+// Which calendars hold weddings: AGENDA_WEDDING_CALENDARS (comma-separated
+// name fragments) if set, otherwise any calendar named like HoneyBook/Wedding
+// or one that tags its synced copies with "Wedding".
+export function weddingCalendarNames(calendars, setting = '') {
+  const wanted = setting.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  return new Set(calendars.filter(c => {
+    const name = (c.calendar_name || '').toLowerCase();
+    if (wanted.length) return wanted.some(w => name.includes(w));
+    return /honeybook|wedding/.test(name) || /wedding/i.test(`${c.prefix || ''} ${c.suffix || ''}`);
+  }).map(c => c.calendar_name));
+}
+
+export function markWeddings(items, weddingCalendars) {
+  return items.map(item => ({
+    ...item,
+    wedding: item.taggedWedding || item.sources.some(s => weddingCalendars.has(s))
+  }));
 }
 
 // Pairs that could plausibly be the same real-world event: close in time.
@@ -56,6 +77,7 @@ export function applyGroups(items, groups) {
     replacements.set(rep.id, {
       ...rep,
       sources: [...new Set(members.flatMap(m => m.sources))],
+      taggedWedding: members.some(m => m.taggedWedding),
       merged: {
         reason: group.reason,
         versions: members.map(m => ({ title: m.title, start: m.start, sources: m.sources }))
