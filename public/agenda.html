@@ -124,6 +124,15 @@
     .allday .meta { color: var(--faint); font-size: 12.5px; margin-left: 4px; }
     .allday .ai { color: var(--accent); }
 
+    .more { text-align: center; padding: 22px 0 8px; }
+    .more p { font-size: 12.5px; color: var(--faint); margin-bottom: 10px; }
+    .more button {
+      appearance: none; border: 0; cursor: pointer; font: inherit; font-size: 15px; font-weight: 600;
+      color: var(--accent); background: var(--surface); box-shadow: 0 0 0 1px var(--line);
+      padding: 11px 20px; border-radius: 999px; min-width: 200px;
+    }
+    .more button:disabled { color: var(--faint); cursor: default; }
+
     .empty, .message { text-align: center; color: var(--muted); padding: 48px 16px; font-size: 15px; }
     .message h2 { color: var(--text); font-size: 18px; margin-bottom: 6px; }
     .skeleton { height: 64px; border-radius: var(--radius); background: var(--surface); box-shadow: 0 0 0 1px var(--line); margin-top: 10px; opacity: 0.6; }
@@ -142,13 +151,19 @@
   </header>
   <div class="status" id="status"></div>
   <div id="list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+  <div class="more" id="more" hidden>
+    <p id="more-range"></p>
+    <button id="more-btn">Show 2 more weeks</button>
+  </div>
 </main>
 
 <script>
 (() => {
   const STORE_TOKEN = 'agenda.token';
   const STORE_DATA = 'agenda.last';
-  const DAYS = 14;
+  const STEP_DAYS = 14;
+  const MAX_DAYS = 60; // the server's limit
+  let days = STEP_DAYS;
 
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -223,7 +238,16 @@
       }
     }
 
-    if (!days.size) { $('list').innerHTML = '<div class="empty">Nothing on the calendar for the next two weeks.</div>'; return; }
+    // Footer: how far ahead we're showing, and a button to look further.
+    const through = new Date(horizon.getTime() - 86400000);
+    $('more').hidden = false;
+    $('more-range').textContent = `Showing through ${through.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`;
+    const btn = $('more-btn');
+    btn.hidden = data.days >= MAX_DAYS;
+    btn.disabled = false;
+    btn.textContent = MAX_DAYS - data.days >= STEP_DAYS ? 'Show 2 more weeks' : 'Show the rest';
+
+    if (!days.size) { $('list').innerHTML = `<div class="empty">Nothing on the calendar through ${esc(through.toLocaleDateString([], { month: 'short', day: 'numeric' }))}.</div>`; return; }
 
     const html = [...days.values()].sort((a, b) => a.date - b.date).map(({ date, items }) => {
       const [title, sub] = dayLabel(date);
@@ -281,7 +305,7 @@
     loading = true;
     $('refresh').classList.add('spinning');
     try {
-      const qs = new URLSearchParams({ days: DAYS });
+      const qs = new URLSearchParams({ days });
       if (token) qs.set('token', token);
       if (force) qs.set('refresh', '1');
       const res = await fetch(`/api/agenda?${qs}`, { credentials: 'same-origin' });
@@ -301,6 +325,18 @@
   }
 
   $('refresh').addEventListener('click', () => load(true));
+  $('more-btn').addEventListener('click', async () => {
+    if (loading) return;
+    const btn = $('more-btn');
+    const prev = days;
+    days = Math.min(days + STEP_DAYS, MAX_DAYS);
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    const y = window.scrollY;
+    await load();
+    window.scrollTo(0, y); // stay where you were; new days appear below
+    if (!navigator.onLine) days = prev;
+  });
   $('list').addEventListener('click', e => {
     const btn = e.target.closest('[data-toggle]');
     if (btn) btn.closest('.event').classList.toggle('open');
