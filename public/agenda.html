@@ -21,6 +21,7 @@
       --muted: #6e6e76;
       --faint: #a3a3ab;
       --line: rgba(0, 0, 0, 0.07);
+      --soft: rgba(255, 255, 255, 0.45);
       --accent: #5b5bd6;
       --accent-soft: rgba(91, 91, 214, 0.1);
       --chip-l: 42%;
@@ -35,6 +36,7 @@
         --muted: #9a9aa3;
         --faint: #65656d;
         --line: rgba(255, 255, 255, 0.08);
+        --soft: rgba(255, 255, 255, 0.035);
         --accent: #9b9bf5;
         --accent-soft: rgba(155, 155, 245, 0.14);
         --chip-l: 72%;
@@ -112,7 +114,11 @@
     .merged-detail li span:last-child { color: var(--muted); white-space: nowrap; }
 
     /* All-day events: one quiet line each, above the day's timed events */
-    .alldays { padding: 0 2px 8px; display: grid; gap: 2px; }
+    /* A faint box: findable at a glance, but quieter than the white event cards */
+    .alldays {
+      display: grid; gap: 4px; margin-bottom: 8px; padding: 9px 12px;
+      border-radius: 12px; background: var(--soft); box-shadow: inset 0 0 0 1px var(--line);
+    }
     .allday {
       display: grid; grid-template-columns: 6px 1fr; column-gap: 7px; align-items: start;
       font-size: 13.5px; color: var(--muted); line-height: 1.35;

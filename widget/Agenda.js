@@ -112,6 +112,10 @@ function palette(tone) {
     blockNow: tone === 'auto' ? dyn(new Color('#000000', 0.13), new Color('#ffffff', 0.22))
       : tone === 'light' ? new Color('#ffffff', 0.7) : new Color('#ffffff', 0.26),
     bar: pick(new Color('#000000'), new Color('#ffffff')),
+    // All-day box: fainter than event blocks, with a hairline edge.
+    allDay: tone === 'auto' ? dyn(new Color('#000000', 0.025), new Color('#ffffff', 0.05))
+      : tone === 'light' ? new Color('#ffffff', 0.22) : new Color('#ffffff', 0.06),
+    allDayEdge: pick(new Color('#000000', 0.09), new Color('#ffffff', 0.12)),
   };
 }
 let C = palette('auto');
@@ -296,11 +300,23 @@ function eventBlock(parent, ev, now, width, { location = true, titleLines = 1 } 
   return height;
 }
 
-function allDayText(parent, list, { size = 11.5 } = {}) {
+// All-day events: one faint outlined box per day ("Grandma visiting  +1"),
+// quieter than the timed-event blocks.
+const PILL_H = 20;
+function allDayPill(parent, list, width) {
   if (!list.length) return 0;
-  const extra = list.length > 1 ? ` +${list.length - 1}` : '';
-  text(parent, `${list[0].title}${extra}`, { size, color: C.tertiary });
-  return 15;
+  const pill = parent.addStack();
+  pill.size = new Size(width, PILL_H);
+  pill.cornerRadius = 5;
+  pill.backgroundColor = C.allDay;
+  pill.borderColor = C.allDayEdge;
+  pill.borderWidth = 1;
+  pill.setPadding(0, 7, 0, 7);
+  pill.centerAlignContent();
+  text(pill, list[0].title, { size: 11.5, weight: 'medium', color: C.secondary });
+  if (list.length > 1) { pill.addSpacer(4); text(pill, `+${list.length - 1}`, { size: 11, color: C.tertiary }); }
+  pill.addSpacer();
+  return PILL_H;
 }
 
 function dateHeader(parent, now, stale, { big = 34 } = {}) {
@@ -315,25 +331,34 @@ function dateHeader(parent, now, stale, { big = 34 } = {}) {
 const EMPTY_TODAY = 'No more events today';
 
 // Fills a column top-down within a height budget so nothing gets clipped.
-// Each day: label, then event blocks, then a quiet all-day line.
-function upcoming(col, days, now, width, budget, { skipFirstTimed = 0 } = {}) {
-  const LABEL = 17, GAP = 4, DAY_GAP = 6;
-  let used = 0, first = true, shown = 0;
-  days.forEach(({ day, timed, label }, i) => {
+// Each day: label, then the all-day box, then event blocks. Days with only
+// all-day events still appear. Today's all-day box can be skipped when the
+// layout already shows it next to the date.
+function upcoming(col, days, now, width, budget, { skipFirstTimed = 0, skipFirstAllDay = false } = {}) {
+  const LABEL = 17, GAP = 4, DAY_GAP = 6, BLOCK = 6 + 15 + 13.5;
+  let used = 0, first = true, shown = 0, full = false;
+  days.forEach(({ day, timed, allDay, label }, i) => {
+    if (full) return;
     const events = i === 0 ? timed.slice(skipFirstTimed) : timed;
-    if (!events.length) return;
-    const firstH = 6 + 15 + 13.5;
-    if (used + (first ? 0 : DAY_GAP) + LABEL + firstH > budget) { used = budget + 1; return; }
+    const allDays = i === 0 && skipFirstAllDay ? [] : allDay;
+    if (!events.length && !allDays.length) return;
+    const firstH = allDays.length ? PILL_H : BLOCK;
+    if (used + (first ? 0 : DAY_GAP) + LABEL + firstH > budget) { full = true; return; }
     if (!first) { col.addSpacer(DAY_GAP); used += DAY_GAP; }
     first = false;
     text(col, label || dayLabel(day, now), { size: 10.5, weight: 'semibold', color: C.secondary });
     col.addSpacer(3);
     used += LABEL;
+    if (allDays.length) {
+      used += allDayPill(col, allDays, width) + GAP;
+      col.addSpacer(GAP);
+      shown++;
+    }
     for (const ev of events) {
-      const h = 6 + 15 + 13.5 + (ev.location ? 13.5 : 0);
+      const h = BLOCK + (ev.location ? 13.5 : 0);
       if (used + h > budget) {
-        if (used + firstH <= budget) { used += eventBlock(col, ev, now, width, { location: false }) + GAP; col.addSpacer(GAP); shown++; }
-        used = budget + 1;
+        if (used + BLOCK <= budget) { used += eventBlock(col, ev, now, width, { location: false }) + GAP; col.addSpacer(GAP); shown++; }
+        full = true;
         return;
       }
       used += eventBlock(col, ev, now, width) + GAP;
@@ -351,18 +376,20 @@ function small(w, days, now, stale) {
   dateHeader(w, now, stale, { big: 30 });
   w.addSpacer(4);
   const today = days[0];
+  if (today.allDay.length) { allDayPill(w, today.allDay, inner); w.addSpacer(4); }
   if (today.timed.length) {
-    eventBlock(w, today.timed[0], now, inner, { location: false, titleLines: 2 });
+    // With an all-day box above, the title gets one line so both fit.
+    eventBlock(w, today.timed[0], now, inner, { location: false, titleLines: today.allDay.length ? 1 : 2 });
     if (today.timed.length > 1) { w.addSpacer(4); text(w, `+${today.timed.length - 1} more today`, { size: 11, color: C.tertiary }); }
   } else {
-    allDayText(w, today.allDay);
-    const next = days.slice(1).find(d => d.timed.length);
+    const next = days.slice(1).find(d => d.timed.length || d.allDay.length);
     if (next) {
-      w.addSpacer(3);
+      if (!today.allDay.length) w.addSpacer(2);
       text(w, dayLabel(next.day, now), { size: 10, weight: 'semibold', color: C.secondary });
       w.addSpacer(2);
-      eventBlock(w, next.timed[0], now, inner, { location: false });
-    } else {
+      if (next.timed.length) eventBlock(w, next.timed[0], now, inner, { location: false });
+      else allDayPill(w, next.allDay, inner);
+    } else if (!today.allDay.length) {
       text(w, EMPTY_TODAY, { size: 12, color: C.secondary, lines: 2 });
     }
   }
@@ -383,8 +410,8 @@ function medium(w, days, now, stale) {
   left.addSpacer(2);
   const today = days[0];
   let onLeft = 0;
-  if (today.allDay.length) { allDayText(left, today.allDay); left.addSpacer(3); }
-  const leftBudget = today.allDay.length ? 52 : 68;
+  if (today.allDay.length) { allDayPill(left, today.allDay, colW); left.addSpacer(4); }
+  const leftBudget = today.allDay.length ? 44 : 68;
   let used = 0;
   for (const ev of today.timed) {
     const h = 6 + 15 + 13.5;
@@ -402,7 +429,7 @@ function medium(w, days, now, stale) {
   const right = row.addStack();
   right.layoutVertically();
   right.size = new Size(colW, 0);
-  const shown = upcoming(right, days, now, colW, 128, { skipFirstTimed: onLeft });
+  const shown = upcoming(right, days, now, colW, 128, { skipFirstTimed: onLeft, skipFirstAllDay: true });
   if (!shown) text(right, 'Nothing else this week', { size: 12, color: C.secondary, lines: 2 });
   right.addSpacer();
 }
@@ -410,12 +437,13 @@ function medium(w, days, now, stale) {
 function large(w, days, now, stale) {
   const inner = widgetWidth('medium') - PAD * 2;
   dateHeader(w, now, stale, { big: 38 });
-  const allDayH = allDayText(w, days[0].allDay);
+  w.addSpacer(2);
+  const allDayH = allDayPill(w, days[0].allDay, inner);
   w.addSpacer(8);
   const list = w.addStack();
   list.layoutVertically();
   // The large widget lists today too, so it reads "TODAY" rather than "LATER TODAY".
-  const shown = upcoming(list, [{ ...days[0], label: 'TODAY' }, ...days.slice(1)], now, inner, 262 - allDayH);
+  const shown = upcoming(list, [{ ...days[0], label: 'TODAY' }, ...days.slice(1)], now, inner, 246 - allDayH, { skipFirstAllDay: true });
   if (!shown) text(list, 'Nothing on the calendar this week', { size: 13, color: C.secondary });
   w.addSpacer();
 }
