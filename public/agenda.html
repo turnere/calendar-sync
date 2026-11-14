@@ -111,6 +111,17 @@
     .merged-detail li { list-style: none; padding: 3px 0; display: flex; justify-content: space-between; gap: 10px; }
     .merged-detail li span:last-child { color: var(--muted); white-space: nowrap; }
 
+    /* All-day events: one quiet line each, above the day's timed events */
+    .alldays { padding: 0 2px 8px; display: grid; gap: 2px; }
+    .allday {
+      display: flex; align-items: baseline; gap: 7px; min-width: 0;
+      font-size: 13.5px; color: var(--muted); line-height: 1.35;
+    }
+    .allday .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; transform: translateY(-1px); background: hsl(var(--h) 55% var(--chip-l)); }
+    .allday .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .allday .meta { color: var(--faint); white-space: nowrap; flex: none; font-size: 12.5px; }
+    .allday .ai { color: var(--accent); }
+
     .empty, .message { text-align: center; color: var(--muted); padding: 48px 16px; font-size: 15px; }
     .message h2 { color: var(--text); font-size: 18px; margin-bottom: 6px; }
     .skeleton { height: 64px; border-radius: var(--radius); background: var(--surface); box-shadow: 0 0 0 1px var(--line); margin-top: 10px; opacity: 0.6; }
@@ -170,6 +181,8 @@
     return [d.toLocaleDateString([], { weekday: 'long' }), d.toLocaleDateString([], { month: 'short', day: 'numeric' })];
   }
 
+  const diffDays = d => Math.round((startOfDay(d) - startOfDay(new Date())) / 86400000);
+
   function minutesAgo(iso) {
     const m = Math.round((Date.now() - new Date(iso)) / 60000);
     return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
@@ -211,9 +224,23 @@
     if (!days.size) { $('list').innerHTML = '<div class="empty">Nothing on the calendar for the next two weeks.</div>'; return; }
 
     const html = [...days.values()].sort((a, b) => a.date - b.date).map(({ date, items }) => {
-      items.sort((a, b) => (b.allDay - a.allDay) || (parse(a.start, a.allDay) - parse(b.start, b.allDay)));
       const [title, sub] = dayLabel(date);
-      const rows = items.map(ev => {
+      const allDays = items.filter(ev => ev.allDay).map(ev => {
+        // Multi-day: "until Wed" on every day but the last.
+        const lastDay = new Date(parse(ev.end, true).getTime() - 86400000);
+        const until = lastDay > date
+          ? `until ${lastDay.toLocaleDateString([], diffDays(lastDay) < 7 ? { weekday: 'short' } : { month: 'short', day: 'numeric' })}`
+          : '';
+        const meta = [until, ev.sources.join(', ')].filter(Boolean).join(' · ');
+        const tip = ev.merged ? ` title="${esc(ev.merged.reason)}"` : '';
+        return `<div class="allday"${tip}>
+          <span class="dot" style="--h:${hue(ev.sources[0] || '')}"></span>
+          <span class="t">${ev.merged ? '<span class="ai">✦</span> ' : ''}${esc(ev.title)}</span>
+          <span class="meta">${esc(meta)}</span>
+        </div>`;
+      }).join('');
+      const timed = items.filter(ev => !ev.allDay).sort((a, b) => parse(a.start, false) - parse(b.start, false));
+      const rows = timed.map(ev => {
         const s = parse(ev.start, ev.allDay), e = parse(ev.end, ev.allDay);
         const past = !ev.allDay && e < now;
         const live = !ev.allDay && s <= now && e > now;
@@ -237,7 +264,7 @@
           </div>
         </div>`;
       }).join('');
-      return `<section class="day"><div class="day-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div><div class="card">${rows}</div></section>`;
+      return `<section class="day"><div class="day-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>${allDays ? `<div class="alldays">${allDays}</div>` : ''}${rows ? `<div class="card">${rows}</div>` : ''}</section>`;
     }).join('');
     $('list').innerHTML = html;
   }
