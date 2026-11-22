@@ -36,7 +36,7 @@ export function weddingCalendarNames(calendars, setting = '') {
 }
 
 // Booking calendars also carry appointments related to a wedding.
-const NON_WEDDING_TITLE = /\b(?:check[\s‐‑–—-]*in|meeting|consult(?:ation)?|(?:planning|discovery|intro|follow[\s-]*up) call|rehearsal|walk[\s-]*through|site visit)\b/i;
+const NON_WEDDING_TITLE = /\b(?:check[\s‐‑–—-]*in|touch[\s‐‑–—-]+base|meeting|consult(?:ation)?|(?:planning|discovery|intro|follow[\s-]*up) call|rehearsal|walk[\s-]*through|site visit)\b/i;
 
 export function markWeddings(items, weddingCalendars) {
   return items.map(item => ({
