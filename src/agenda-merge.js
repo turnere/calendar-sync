@@ -35,10 +35,15 @@ export function weddingCalendarNames(calendars, setting = '') {
   }).map(c => c.calendar_name));
 }
 
+// Booking calendars also carry appointments related to a wedding.
+const NON_WEDDING_TITLE = /\b(?:check[\s‐‑–—-]*in|meeting|consult(?:ation)?|(?:planning|discovery|intro|follow[\s-]*up) call|rehearsal|walk[\s-]*through|site visit)\b/i;
+
 export function markWeddings(items, weddingCalendars) {
   return items.map(item => ({
     ...item,
-    wedding: item.taggedWedding || item.sources.some(s => weddingCalendars.has(s))
+    wedding: (item.taggedWedding || item.sources.some(s => weddingCalendars.has(s)))
+      && !NON_WEDDING_TITLE.test(item.title)
+      && !item.merged?.versions.some(version => NON_WEDDING_TITLE.test(version.title))
   }));
 }
 
