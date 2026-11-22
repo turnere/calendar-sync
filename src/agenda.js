@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { getCombinedEvents } from './sync.js';
 import { getIcsToken } from './database.js';
-import { NEAR_MS, startMs, toItem, findCandidates, applyGroups, weddingCalendarNames, markWeddings } from './agenda-merge.js';
+import { startMs, toItem, findCandidates, applyGroups, weddingCalendarNames, markWeddings } from './agenda-merge.js';
 
 // Read-only, de-duplicated agenda across every enabled calendar, for the phone
 // view (public/agenda.html) and any home-screen widget. Nothing is written back
@@ -112,7 +112,8 @@ export async function buildAgenda(days = 14) {
   const from = now - 24 * 60 * 60 * 1000; // the page hides anything already over
   const to = now + days * 24 * 60 * 60 * 1000;
 
-  let items = events.map(toItem).filter(item => {
+  const allItems = events.map(toItem);
+  let items = allItems.filter(item => {
     const s = new Date(item.start).getTime();
     const e = new Date(item.end).getTime();
     return !isNaN(s) && s < to && (isNaN(e) ? s : e) > from;
@@ -125,14 +126,17 @@ export async function buildAgenda(days = 14) {
   items = markWeddings(applyGroups(items, ai.groups), weddingCals);
   items.sort((a, b) => startMs(a) - startMs(b));
 
-  // The next few weddings even beyond the requested range, for the page's
-  // "Next wedding" bar and the widget's strip. Only within a month: anything
-  // further out isn't worth a reminder yet.
-  const horizon = now + 31 * 24 * 60 * 60 * 1000;
+  // Look beyond the requested range for quiet-calendar previews. Date-only
+  // values use an exclusive end date, and are compared as calendar dates.
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Chicago' }).format(now);
+  const upcoming = markWeddings(allItems, weddingCals)
+    .filter(item => Number.isFinite(startMs(item))
+      && (item.allDay ? item.end > today : new Date(item.end).getTime() > now))
+    .sort((a, b) => startMs(a) - startMs(b));
+  const nextEvent = upcoming[0] || null;
   const seenWedding = new Set();
-  const upcomingWeddings = markWeddings(events.map(toItem), weddingCals)
-    .filter(item => item.wedding && new Date(item.end).getTime() > now && startMs(item) < horizon)
-    .sort((a, b) => startMs(a) - startMs(b))
+  const upcomingWeddings = upcoming
+    .filter(item => item.wedding)
     .filter(item => {
       const key = `${item.title.toLowerCase()}|${item.start}`;
       if (seenWedding.has(key)) return false;
@@ -148,6 +152,7 @@ export async function buildAgenda(days = 14) {
     ai: ai.status,
     calendars: calendars.map(c => c.calendar_name).filter(Boolean),
     weddingCalendars: [...weddingCals],
+    nextEvent,
     upcomingWeddings,
     stats: {
       shown: items.length,

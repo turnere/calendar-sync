@@ -508,7 +508,10 @@ function large(w, days, now, stale, upcomingWeddings = []) {
   w.addSpacer(8);
   // Next wedding past the visible week gets a strip at the bottom.
   const lastDay = days[days.length - 1].day;
-  const later = upcomingWeddings.find(x => startOfDay(parse(x.start, x.allDay)) > lastDay);
+  const later = upcomingWeddings.find(x => {
+    const day = startOfDay(parse(x.start, x.allDay));
+    return day > lastDay && day <= addDays(startOfDay(now), 31);
+  });
   const list = w.addStack();
   list.layoutVertically();
   // The large widget lists today too, so it reads "TODAY" rather than "LATER TODAY".
@@ -529,6 +532,40 @@ function lockScreen(w, days, now) {
   text(w, next.title, { size: 14, weight: 'bold', lines: 2 });
 }
 
+function quietAgenda(w, family, data, now, stale) {
+  const isUpcoming = ev => ev && parse(ev.end, ev.allDay) > now;
+  const next = isUpcoming(data.nextEvent) ? data.nextEvent : null;
+  const wedding = (data.upcomingWeddings || []).find(isUpcoming);
+  if (!next && !wedding) return false;
+
+  if (!family.startsWith('accessory')) {
+    dateHeader(w, now, stale, { big: 28 });
+    w.addSpacer(4);
+  }
+
+  const sameEvent = next && wedding && next.start === wedding.start && next.title === wedding.title;
+  const previews = [
+    ...(!sameEvent && next ? [{ event: next, label: 'NEXT UP' }] : []),
+    ...(wedding ? [{ event: wedding, label: '♥ NEXT WEDDING' }] : [])
+  ];
+  if (family === 'accessoryInline') {
+    text(w, previews.map(({ event, label }) =>
+      `${label}: ${event.title} · ${fmt(parse(event.start, event.allDay), 'MMM d')}`
+    ).join('  |  '), { size: 12 });
+    return true;
+  }
+  const isLock = family.startsWith('accessory');
+  previews.forEach(({ event, label }, index) => {
+    if (index) w.addSpacer(4);
+    const date = parse(event.start, event.allDay);
+    const time = event.allDay ? '' : ` · ${clock(date, true)}`;
+    text(w, `${label} · ${fmt(date, 'MMM d')}${time}`, { size: 10, weight: 'semibold' });
+    text(w, event.title, { size: isLock ? 12 : 13, weight: 'bold', lines: 1 });
+  });
+  if (!isLock) w.addSpacer();
+  return true;
+}
+
 function render(w, family, result, now, parameter) {
   const isLock = family.startsWith('accessory');
   if (!isLock) {
@@ -542,6 +579,8 @@ function render(w, family, result, now, parameter) {
     return;
   }
   const days = buildDays(result.data.events, now, 7);
+  const quiet = !days.some(day => day.timed.length || day.allDay.length || day.weddings.length);
+  if (quiet && quietAgenda(w, family, result.data, now, result.stale)) return;
   if (isLock) lockScreen(w, days, now);
   else if (family === 'small') small(w, days, now, result.stale);
   else if (family === 'medium') medium(w, days, now, result.stale);
