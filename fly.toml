@@ -7,6 +7,7 @@ primary_region = "iad"
   NODE_ENV = "production"
   PORT = "8080"
   DATA_DIR = "/data"
+  AGENDA_PROXY_PUBLIC_KEY = "MCowBQYDK2VwAyEA1tohuEFMs6W701ldJp7C5G0JywcobYrjQNv89KgYgQ4="
 
 [http_service]
   internal_port = 8080

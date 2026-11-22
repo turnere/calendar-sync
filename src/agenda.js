@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { getCombinedEvents } from './sync.js';
 import { getIcsToken } from './database.js';
+import { agendaProxyAuthorized } from './agenda-proxy-auth.js';
 import { startMs, toItem, findCandidates, applyGroups, weddingCalendarNames, markWeddings } from './agenda-merge.js';
 
 // Read-only, de-duplicated agenda across every enabled calendar, for the phone
@@ -169,6 +170,7 @@ const responseCache = new Map(); // days -> { at, promise }
 
 function isAuthorized(req) {
   if (!process.env.BASIC_AUTH_PASSWORD || req.session?.authenticated) return true;
+  if (agendaProxyAuthorized(req, process.env.AGENDA_PROXY_PUBLIC_KEY)) return true;
   const expected = getIcsToken();
   const header = req.get('authorization') || '';
   const given = req.query.token || (header.startsWith('Bearer ') ? header.slice(7) : '');
