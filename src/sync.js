@@ -955,7 +955,9 @@ function mergeOverlappingIcsEvents(events) {
 }
 
 // Fetch all events from all calendars, deduplicate, return combined list
-export async function getCombinedEvents() {
+// `window` limits (or extends into the past) what is read from Google; ICS feeds
+// always come back whole, so callers still filter by date.
+export async function getCombinedEvents(window = null) {
   const allCalendars = getEnabledCalendars();
   if (allCalendars.length === 0) return { events: [], calendars: allCalendars };
 
@@ -979,7 +981,7 @@ export async function getCombinedEvents() {
         events = [];
       }
     } else {
-      ({ events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id));
+      ({ events } = await getEventsForSync(auths[cal.account_num], cal.calendar_id, null, window));
     }
     events = filterExcludedEvents(events, cal.exclude_keywords);
     for (const event of events) {

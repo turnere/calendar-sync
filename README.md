@@ -138,7 +138,7 @@ Make sure:
 
 - Exact duplicates (same title and start once prefixes are stripped) collapse into one entry, with a chip for each calendar the event was on.
 - If `ANTHROPIC_API_KEY` is set, Claude groups events starting within 3 hours of each other that are the same real event despite different wording ("Dr. Smith" / "Doctor appointment"). Tap "✦ merged" on an event to see what was combined and why. Decisions are cached, so an unchanged calendar costs nothing to reload.
-- The data comes from `GET /api/agenda?days=14`, which accepts either a logged-in session or the ICS feed token (`?token=` or `Authorization: Bearer`). A home-screen widget can use this same endpoint.
+- The data comes from `GET /api/agenda?days=14`, which accepts either a logged-in session or the ICS feed token (`?token=` or `Authorization: Bearer`). A home-screen widget can use this same endpoint. Add `from=YYYY-MM-DD` to get a specific range (past or future, up to 60 days), as the iPhone app does for each month.
 
 - **Weddings** stand out: any event on a calendar named like "HoneyBook" or "Wedding" (or one that tags synced copies with "Wedding") gets a bold card on the page and an inverted block in the widget, plus a "Next wedding" countdown when one is within a month. To pick the calendars yourself, set `AGENDA_WEDDING_CALENDARS` (comma-separated name fragments) on the server; `/api/agenda` lists the matches in `weddingCalendars`.
 

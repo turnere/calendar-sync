@@ -85,8 +85,9 @@ export function getCalendarService(auth) {
   return google.calendar({ version: 'v3', auth });
 }
 
-// Get events for sync (used by sync module)
-export async function getEventsForSync(auth, calendarId, syncToken = null) {
+// Get events for sync (used by sync module). `window` ({ from, to } in ms) is for
+// read-only views that need a specific date range instead of the sync default.
+export async function getEventsForSync(auth, calendarId, syncToken = null, window = null) {
   const calendar = google.calendar({ version: 'v3', auth });
   
   const params = {
@@ -105,8 +106,8 @@ export async function getEventsForSync(auth, calendarId, syncToken = null) {
     const timeMax = new Date();
     timeMax.setFullYear(timeMax.getFullYear() + 2);
     
-    params.timeMin = timeMin.toISOString();
-    params.timeMax = timeMax.toISOString();
+    params.timeMin = (window ? new Date(window.from) : timeMin).toISOString();
+    params.timeMax = (window ? new Date(window.to) : timeMax).toISOString();
     params.orderBy = 'startTime';
   }
   
