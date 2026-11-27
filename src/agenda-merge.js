@@ -5,6 +5,25 @@ export const NEAR_MS = 3 * 60 * 60 * 1000; // events starting >3h apart are neve
 
 export function startMs(item) { return new Date(item.start).getTime(); }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// A requested start date (YYYY-MM-DD), within reason, or null if unusable.
+export function parseFromDate(value, now = Date.now()) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const ms = Date.parse(`${value}T00:00:00Z`);
+  if (isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== value) return null;
+  return Math.abs(ms - now) <= 3 * 366 * DAY_MS ? value : null;
+}
+
+// The span of time an agenda covers. Without a start date: from a day ago (the
+// views hide anything already over) to `days` ahead. With one: that range,
+// padded a day each side because the viewer's timezone isn't the server's.
+export function agendaWindow(days, from = null, now = Date.now()) {
+  if (!from) return { from: now - DAY_MS, to: now + days * DAY_MS };
+  const start = Date.parse(`${from}T00:00:00Z`);
+  return { from: start - DAY_MS, to: start + (days + 1) * DAY_MS };
+}
+
 export function toItem(event) {
   const allDay = !event.start?.dateTime;
   const start = event.start?.dateTime || event.start?.date;

@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getCombinedEvents } from './sync.js';
 import { getIcsToken } from './database.js';
 import { agendaProxyAuthorized } from './agenda-proxy-auth.js';
-import { startMs, toItem, findCandidates, applyGroups, weddingCalendarNames, markWeddings } from './agenda-merge.js';
+import { startMs, toItem, findCandidates, applyGroups, weddingCalendarNames, markWeddings, parseFromDate, agendaWindow } from './agenda-merge.js';
 
 // Read-only, de-duplicated agenda across every enabled calendar, for the phone
 // view (public/agenda.html) and any home-screen widget. Nothing is written back
@@ -107,11 +107,12 @@ ${JSON.stringify(listing)}`;
 }
 
 
-export async function buildAgenda(days = 14) {
-  const { events, calendars } = await getCombinedEvents();
+// `startDate` (YYYY-MM-DD) asks for a specific range, past or future, e.g. one
+// month of the iPhone app's calendar. Without it: what's coming up.
+export async function buildAgenda(days = 14, startDate = null) {
   const now = Date.now();
-  const from = now - 24 * 60 * 60 * 1000; // the page hides anything already over
-  const to = now + days * 24 * 60 * 60 * 1000;
+  const { from, to } = agendaWindow(days, startDate, now);
+  const { events, calendars } = await getCombinedEvents(startDate ? { from, to } : null);
 
   const allItems = events.map(toItem);
   let items = allItems.filter(item => {
@@ -129,8 +130,9 @@ export async function buildAgenda(days = 14) {
 
   // Look beyond the requested range for quiet-calendar previews. Date-only
   // values use an exclusive end date, and are compared as calendar dates.
+  // A dated request only reads its own range, so it carries no previews.
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Chicago' }).format(now);
-  const upcoming = markWeddings(allItems, weddingCals)
+  const upcoming = startDate ? [] : markWeddings(allItems, weddingCals)
     .filter(item => Number.isFinite(startMs(item))
       && (item.allDay ? item.end > today : new Date(item.end).getTime() > now))
     .sort((a, b) => startMs(a) - startMs(b));
@@ -150,6 +152,7 @@ export async function buildAgenda(days = 14) {
   return {
     generatedAt: new Date(now).toISOString(),
     days,
+    ...(startDate && { from: startDate }),
     ai: ai.status,
     calendars: calendars.map(c => c.calendar_name).filter(Boolean),
     weddingCalendars: [...weddingCals],
@@ -166,7 +169,8 @@ export async function buildAgenda(days = 14) {
 
 // --- Route ---
 
-const responseCache = new Map(); // days -> { at, promise }
+const MAX_RESPONSES = 40;
+const responseCache = new Map(); // "from:days" -> { at, promise }
 
 function isAuthorized(req) {
   if (!process.env.BASIC_AUTH_PASSWORD || req.session?.authenticated) return true;
@@ -184,12 +188,16 @@ agendaRouter.get('/', async (req, res) => {
   if (!isAuthorized(req)) return res.status(401).json({ error: 'Not authenticated' });
 
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 1), 60);
+  const startDate = parseFromDate(req.query.from);
+  if (req.query.from && !startDate) return res.status(400).json({ error: 'from must be a date like 2026-12-01' });
   const fresh = req.query.refresh === '1';
-  let entry = responseCache.get(days);
+  const key = `${startDate || ''}:${days}`;
+  let entry = responseCache.get(key);
   if (fresh || !entry || Date.now() - entry.at > RESPONSE_TTL_MS) {
-    entry = { at: Date.now(), promise: buildAgenda(days) };
-    responseCache.set(days, entry);
-    entry.promise.catch(() => responseCache.delete(days));
+    entry = { at: Date.now(), promise: buildAgenda(days, startDate) };
+    if (responseCache.size >= MAX_RESPONSES) responseCache.delete(responseCache.keys().next().value);
+    responseCache.set(key, entry);
+    entry.promise.catch(() => responseCache.delete(key));
   }
 
   try {
